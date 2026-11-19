@@ -1,0 +1,3318 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+  <meta name="theme-color" content="#0a0f1c" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="description" content="Analizador Acústico y de Vibraciones Industrial con FFT en tiempo real y evaluación normativa ISO 10816." />
+  <title>VibroSpec ISO — Analizador Acústico y de Vibraciones</title>
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%230a0f1c'/%3E%3Cpath d='M8 36h8l6-18 8 30 8-22 6 10h12' fill='none' stroke='%2306b6d4' stroke-width='4.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E" />
+
+  <style>
+    /* =========================================================================
+       VARIABLES DE DISEÑO INDUSTRIAL (ESTILO SKF / FLUKE)
+       ========================================================================= */
+    :root {
+      --bg-base: #0a0f1c;
+      --bg-card: #111827;
+      --bg-elevated: #172033;
+      --bg-input: #0d1424;
+      --border: #1e293b;
+      --border-strong: #334155;
+
+      --text-primary: #f8fafc;
+      --text-secondary: #94a3b8;
+      --text-muted: #64748b;
+
+      /* Semáforo Normativo ISO 10816 */
+      --iso-a: #10b981; /* Zona A: Bueno */
+      --iso-b: #eab308; /* Zona B: Satisfactorio */
+      --iso-c: #f97316; /* Zona C: Insatisfactorio */
+      --iso-d: #ef4444; /* Zona D: Inaceptable / Peligro */
+
+      /* Acento Huella Base y UI */
+      --cyan: #06b6d4;
+      --cyan-soft: rgba(6, 182, 212, 0.16);
+      --blue-accent: #3b82f6;
+
+      --radius-sm: 8px;
+      --radius-md: 12px;
+      --radius-lg: 16px;
+      --shadow-card: 0 6px 20px rgba(0, 0, 0, 0.35);
+
+      --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+      --font-mono: ui-monospace, "SF Mono", "Cascadia Code", "Fira Code", Consolas, Monaco, monospace;
+
+      --nav-height: 68px;
+      --safe-bottom: env(safe-area-inset-bottom, 0px);
+    }
+
+    * {
+      box-sizing: border-box;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    html, body {
+      margin: 0;
+      padding: 0;
+      background-color: var(--bg-base);
+      color: var(--text-primary);
+      font-family: var(--font-sans);
+      font-size: 15px;
+      line-height: 1.4;
+      overflow-x: hidden;
+      min-height: 100vh;
+    }
+
+    /* =========================================================================
+       LAYOUT PRINCIPAL Y ENCABEZADO
+       ========================================================================= */
+    .app-shell {
+      max-width: 980px;
+      margin: 0 auto;
+      padding-bottom: calc(var(--nav-height) + var(--safe-bottom) + 20px);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .top-header {
+      position: sticky;
+      top: 0;
+      z-index: 40;
+      background: rgba(10, 15, 28, 0.92);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border-bottom: 1px solid var(--border);
+      padding: 10px 14px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      min-width: 0;
+    }
+
+    .brand-icon {
+      width: 36px;
+      height: 36px;
+      border-radius: 10px;
+      background: linear-gradient(135deg, rgba(6, 182, 212, 0.2), rgba(59, 130, 246, 0.15));
+      border: 1px solid rgba(6, 182, 212, 0.4);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+
+    .brand-title {
+      font-weight: 700;
+      font-size: 1rem;
+      letter-spacing: 0.02em;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .brand-subtitle {
+      font-size: 0.72rem;
+      color: var(--text-secondary);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .status-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 5px 10px;
+      border-radius: 999px;
+      background: var(--bg-elevated);
+      border: 1px solid var(--border-strong);
+      font-size: 0.74rem;
+      font-weight: 600;
+      font-family: var(--font-mono);
+      flex-shrink: 0;
+    }
+
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--text-muted);
+    }
+
+    .status-dot.live {
+      background: var(--iso-a);
+      box-shadow: 0 0 8px var(--iso-a);
+      animation: pulse-dot 1.4s infinite;
+    }
+
+    @keyframes pulse-dot {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.45; transform: scale(0.82); }
+    }
+
+    /* =========================================================================
+       CONTENEDOR DE PESTAÑAS Y TARJETAS
+       ========================================================================= */
+    .main-content {
+      padding: 12px 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      flex: 1;
+    }
+
+    .tab-view {
+      display: none;
+      flex-direction: column;
+      gap: 12px;
+      animation: fade-in 0.2s ease-out;
+    }
+
+    .tab-view.active {
+      display: flex;
+    }
+
+    @keyframes fade-in {
+      from { opacity: 0; transform: translateY(4px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    .card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      padding: 14px;
+      box-shadow: var(--shadow-card);
+    }
+
+    .card-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      margin-bottom: 10px;
+    }
+
+    .card-title {
+      font-size: 0.82rem;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--text-secondary);
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .mono {
+      font-family: var(--font-mono);
+      font-variant-numeric: tabular-nums;
+    }
+
+    /* =========================================================================
+       BANNER DE ALERTA PROMINENTE (ISO C/D O DESVIACIÓN HUELLA BASE > +35%)
+       ========================================================================= */
+    .alert-banner {
+      display: none;
+      border-radius: var(--radius-md);
+      padding: 12px 14px;
+      border: 1px solid var(--iso-d);
+      background: rgba(239, 68, 68, 0.14);
+      color: #fecaca;
+      align-items: flex-start;
+      gap: 10px;
+      animation: soft-blink 1.6s ease-in-out infinite;
+    }
+
+    .alert-banner.visible {
+      display: flex;
+    }
+
+    .alert-banner.warning {
+      border-color: var(--iso-c);
+      background: rgba(249, 115, 22, 0.14);
+      color: #fed7aa;
+    }
+
+    @keyframes soft-blink {
+      0%, 100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.35); border-color: rgba(239, 68, 68, 0.9); }
+      50% { box-shadow: 0 0 18px 2px rgba(239, 68, 68, 0.25); border-color: rgba(239, 68, 68, 0.35); }
+    }
+
+    .alert-banner.warning {
+      animation-name: soft-blink-warn;
+    }
+
+    @keyframes soft-blink-warn {
+      0%, 100% { box-shadow: 0 0 0 0 rgba(249, 115, 22, 0.35); border-color: rgba(249, 115, 22, 0.9); }
+      50% { box-shadow: 0 0 16px 2px rgba(249, 115, 22, 0.2); border-color: rgba(249, 115, 22, 0.35); }
+    }
+
+    .alert-title {
+      font-weight: 700;
+      font-size: 0.9rem;
+      margin-bottom: 2px;
+    }
+
+    .alert-desc {
+      font-size: 0.8rem;
+      opacity: 0.92;
+    }
+
+    /* =========================================================================
+       CONTROLES DE ADQUISICIÓN Y SELECTORES
+       ========================================================================= */
+    .control-row {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 10px;
+    }
+
+    @media (min-width: 640px) {
+      .control-row.two-col {
+        grid-template-columns: 1.3fr 1fr;
+      }
+      .control-row.three-col {
+        grid-template-columns: repeat(3, 1fr);
+      }
+    }
+
+    .field-group {
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+    }
+
+    .field-label {
+      font-size: 0.74rem;
+      color: var(--text-secondary);
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    select, input[type="text"], input[type="number"] {
+      width: 100%;
+      min-height: 42px;
+      background: var(--bg-input);
+      color: var(--text-primary);
+      border: 1px solid var(--border-strong);
+      border-radius: var(--radius-sm);
+      padding: 8px 12px;
+      font-size: 0.9rem;
+      font-family: inherit;
+      outline: none;
+      transition: border-color 0.15s ease;
+    }
+
+    select:focus, input:focus {
+      border-color: var(--cyan);
+    }
+
+    /* Selector segmentado (Fuente de señal) */
+    .segmented {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      background: var(--bg-input);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      padding: 4px;
+      gap: 4px;
+    }
+
+    .seg-btn {
+      min-height: 40px;
+      border: none;
+      border-radius: var(--radius-sm);
+      background: transparent;
+      color: var(--text-secondary);
+      font-size: 0.78rem;
+      font-weight: 600;
+      cursor: pointer;
+      padding: 6px 4px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 2px;
+      transition: all 0.16s ease;
+    }
+
+    .seg-btn.active {
+      background: var(--bg-elevated);
+      color: var(--text-primary);
+      border: 1px solid rgba(6, 182, 212, 0.45);
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+    }
+
+    .sub-bar {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 8px;
+      margin-top: 10px;
+      padding-top: 10px;
+      border-top: 1px solid var(--border);
+    }
+
+    .chip-group {
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+      flex: 1;
+    }
+
+    .chip {
+      min-height: 36px;
+      padding: 6px 11px;
+      border-radius: 999px;
+      border: 1px solid var(--border-strong);
+      background: var(--bg-input);
+      color: var(--text-secondary);
+      font-size: 0.76rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+
+    .chip.active {
+      background: var(--cyan-soft);
+      border-color: var(--cyan);
+      color: #cffafe;
+    }
+
+    /* Botones industriales táctiles */
+    .btn {
+      min-height: 44px;
+      border-radius: var(--radius-md);
+      border: 1px solid transparent;
+      padding: 10px 14px;
+      font-size: 0.86rem;
+      font-weight: 700;
+      font-family: inherit;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      transition: transform 0.1s ease, filter 0.15s ease, background 0.15s ease;
+      user-select: none;
+    }
+
+    .btn:active {
+      transform: scale(0.98);
+    }
+
+    .btn-primary {
+      background: linear-gradient(135deg, #0891b2, #0284c7);
+      color: #fff;
+      box-shadow: 0 4px 14px rgba(8, 145, 178, 0.3);
+    }
+
+    .btn-start {
+      background: linear-gradient(135deg, #059669, #10b981);
+      color: #022c22;
+      box-shadow: 0 4px 14px rgba(16, 185, 129, 0.3);
+    }
+
+    .btn-stop {
+      background: linear-gradient(135deg, #dc2626, #ef4444);
+      color: #fff;
+      box-shadow: 0 4px 14px rgba(239, 68, 68, 0.3);
+    }
+
+    .btn-outline {
+      background: var(--bg-elevated);
+      border-color: var(--border-strong);
+      color: var(--text-primary);
+    }
+
+    .btn-cyan-outline {
+      background: rgba(6, 182, 212, 0.1);
+      border-color: rgba(6, 182, 212, 0.5);
+      color: #67e8f9;
+    }
+
+    .btn-danger-outline {
+      background: rgba(239, 68, 68, 0.1);
+      border-color: rgba(239, 68, 68, 0.45);
+      color: #fca5a5;
+    }
+
+    .btn-sm {
+      min-height: 36px;
+      padding: 6px 10px;
+      font-size: 0.78rem;
+      border-radius: var(--radius-sm);
+    }
+
+    .action-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+
+    /* =========================================================================
+       BARRA DE SEVERIDAD NORMATIVA ISO 10816
+       ========================================================================= */
+    .iso-header {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin-bottom: 10px;
+    }
+
+    .iso-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 10px;
+      border-radius: 999px;
+      font-size: 0.76rem;
+      font-weight: 800;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+
+    .iso-badge.zone-a { background: rgba(16, 185, 129, 0.18); color: #34d399; border: 1px solid rgba(16, 185, 129, 0.5); }
+    .iso-badge.zone-b { background: rgba(234, 179, 8, 0.18); color: #facc15; border: 1px solid rgba(234, 179, 8, 0.5); }
+    .iso-badge.zone-c { background: rgba(249, 115, 22, 0.18); color: #fb923c; border: 1px solid rgba(249, 115, 22, 0.5); }
+    .iso-badge.zone-d { background: rgba(239, 68, 68, 0.22); color: #f87171; border: 1px solid rgba(239, 68, 68, 0.6); }
+
+    .iso-meter-wrap {
+      position: relative;
+      padding: 16px 0 22px;
+    }
+
+    .iso-bar {
+      display: flex;
+      height: 16px;
+      border-radius: 999px;
+      overflow: hidden;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      background: var(--bg-input);
+    }
+
+    .iso-seg {
+      height: 100%;
+      position: relative;
+    }
+    .iso-seg.a { background: linear-gradient(90deg, #059669, #10b981); }
+    .iso-seg.b { background: linear-gradient(90deg, #ca8a04, #eab308); }
+    .iso-seg.c { background: linear-gradient(90deg, #ea580c, #f97316); }
+    .iso-seg.d { background: linear-gradient(90deg, #dc2626, #ef4444); }
+
+    .iso-needle {
+      position: absolute;
+      top: 8px;
+      width: 4px;
+      height: 30px;
+      background: #ffffff;
+      border-radius: 3px;
+      box-shadow: 0 0 10px rgba(255, 255, 255, 0.9), 0 0 4px #000;
+      transform: translateX(-50%);
+      transition: left 0.14s linear;
+      z-index: 3;
+    }
+
+    .iso-needle-val {
+      position: absolute;
+      top: -16px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: #0f172a;
+      border: 1px solid var(--border-strong);
+      color: #fff;
+      font-family: var(--font-mono);
+      font-size: 0.68rem;
+      font-weight: 700;
+      padding: 1px 5px;
+      border-radius: 4px;
+      white-space: nowrap;
+    }
+
+    .iso-baseline-pin {
+      position: absolute;
+      top: 13px;
+      width: 3px;
+      height: 22px;
+      background: var(--cyan);
+      box-shadow: 0 0 8px var(--cyan);
+      transform: translateX(-50%);
+      z-index: 2;
+      display: none;
+    }
+
+    .iso-ticks {
+      position: relative;
+      height: 18px;
+      margin-top: 6px;
+      font-family: var(--font-mono);
+      font-size: 0.68rem;
+      color: var(--text-secondary);
+    }
+
+    .iso-tick {
+      position: absolute;
+      transform: translateX(-50%);
+      white-space: nowrap;
+    }
+
+    /* =========================================================================
+       TARJETAS DE TELEMETRÍA EN VIVO
+       ========================================================================= */
+    .kpi-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 10px;
+    }
+
+    @media (min-width: 720px) {
+      .kpi-grid {
+        grid-template-columns: repeat(4, 1fr);
+      }
+    }
+
+    .kpi-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      padding: 11px 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .kpi-card::before {
+      content: "";
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 3px;
+      height: 100%;
+      background: var(--kpi-accent, var(--cyan));
+    }
+
+    .kpi-label {
+      font-size: 0.7rem;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--text-secondary);
+      font-weight: 600;
+    }
+
+    .kpi-value {
+      font-family: var(--font-mono);
+      font-size: 1.4rem;
+      font-weight: 800;
+      line-height: 1.1;
+      color: var(--text-primary);
+    }
+
+    .kpi-unit {
+      font-size: 0.74rem;
+      font-weight: 500;
+      color: var(--text-secondary);
+      margin-left: 3px;
+    }
+
+    .kpi-sub {
+      font-size: 0.72rem;
+      color: var(--text-muted);
+      font-family: var(--font-mono);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 4px;
+    }
+
+    .delta-pill {
+      font-weight: 700;
+      padding: 1px 6px;
+      border-radius: 4px;
+      font-size: 0.68rem;
+    }
+
+    .delta-ok { background: rgba(16, 185, 129, 0.16); color: #34d399; }
+    .delta-warn { background: rgba(249, 115, 22, 0.2); color: #fb923c; }
+    .delta-bad { background: rgba(239, 68, 68, 0.22); color: #f87171; }
+
+    /* =========================================================================
+       CANVAS DE GRÁFICAS EN TIEMPO REAL
+       ========================================================================= */
+    .canvas-box {
+      position: relative;
+      width: 100%;
+      border-radius: var(--radius-md);
+      background: #070b14;
+      border: 1px solid var(--border);
+      overflow: hidden;
+    }
+
+    .canvas-fft {
+      height: 245px;
+    }
+
+    .canvas-wave {
+      height: 130px;
+    }
+
+    canvas {
+      display: block;
+      width: 100%;
+      height: 100%;
+    }
+
+    .chart-legend {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      font-size: 0.72rem;
+      color: var(--text-secondary);
+      margin-top: 8px;
+      align-items: center;
+    }
+
+    .legend-item {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+    }
+
+    .legend-line {
+      width: 14px;
+      height: 3px;
+      border-radius: 2px;
+    }
+
+    .legend-dashed {
+      width: 16px;
+      height: 0;
+      border-top: 2px dashed var(--cyan);
+    }
+
+    /* Barra de progreso captura huella base */
+    .capture-progress {
+      display: none;
+      margin-top: 10px;
+      background: var(--bg-input);
+      border: 1px solid rgba(6, 182, 212, 0.4);
+      border-radius: var(--radius-sm);
+      padding: 8px 10px;
+    }
+
+    .capture-progress.active {
+      display: block;
+    }
+
+    .progress-track {
+      height: 6px;
+      background: #1e293b;
+      border-radius: 999px;
+      overflow: hidden;
+      margin-top: 6px;
+    }
+
+    .progress-fill {
+      height: 100%;
+      width: 0%;
+      background: linear-gradient(90deg, var(--cyan), #38bdf8);
+      transition: width 0.08s linear;
+    }
+
+    /* =========================================================================
+       LISTA DE MÁQUINAS Y DIAGNÓSTICO / HISTORIAL
+       ========================================================================= */
+    .machine-list {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .machine-item {
+      background: var(--bg-elevated);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      padding: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      transition: border-color 0.15s ease;
+    }
+
+    .machine-item.selected {
+      border-color: var(--cyan);
+      box-shadow: 0 0 0 1px rgba(6, 182, 212, 0.3);
+    }
+
+    .machine-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 8px;
+    }
+
+    .machine-name {
+      font-weight: 700;
+      font-size: 0.96rem;
+    }
+
+    .machine-meta {
+      font-size: 0.78rem;
+      color: var(--text-secondary);
+      font-family: var(--font-mono);
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    .tag {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 2px 8px;
+      border-radius: 6px;
+      font-size: 0.72rem;
+      font-family: var(--font-mono);
+      background: var(--bg-input);
+      border: 1px solid var(--border-strong);
+      color: var(--text-secondary);
+    }
+
+    .tag.cyan {
+      background: rgba(6, 182, 212, 0.12);
+      border-color: rgba(6, 182, 212, 0.45);
+      color: #67e8f9;
+    }
+
+    .diag-box {
+      border-radius: var(--radius-md);
+      padding: 14px;
+      background: var(--bg-elevated);
+      border-left: 4px solid var(--iso-a);
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .diag-fault {
+      font-size: 1.05rem;
+      font-weight: 800;
+    }
+
+    .diag-summary {
+      font-size: 0.86rem;
+      color: #cbd5e1;
+    }
+
+    .diag-list {
+      margin: 4px 0 0;
+      padding-left: 18px;
+      font-size: 0.83rem;
+      color: var(--text-secondary);
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .harmonic-pills {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 6px;
+      margin-top: 4px;
+    }
+
+    .h-pill {
+      background: var(--bg-input);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      padding: 7px 6px;
+      text-align: center;
+    }
+
+    .h-pill-lbl {
+      font-size: 0.68rem;
+      color: var(--text-muted);
+      font-weight: 700;
+    }
+
+    .h-pill-val {
+      font-family: var(--font-mono);
+      font-size: 0.82rem;
+      font-weight: 700;
+      margin-top: 2px;
+    }
+
+    /* Historial / Bitácora */
+    .history-list {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .history-card {
+      background: var(--bg-elevated);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      padding: 11px 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .history-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .history-metrics {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      font-family: var(--font-mono);
+      font-size: 0.76rem;
+      color: var(--text-secondary);
+    }
+
+    .empty-state {
+      text-align: center;
+      padding: 26px 14px;
+      color: var(--text-muted);
+      font-size: 0.86rem;
+      border: 1px dashed var(--border-strong);
+      border-radius: var(--radius-md);
+    }
+
+    /* =========================================================================
+       NAVEGACIÓN INFERIOR FIJA (MOBILE APP STYLE)
+       ========================================================================= */
+    .bottom-nav {
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      z-index: 50;
+      background: rgba(13, 20, 36, 0.96);
+      backdrop-filter: blur(14px);
+      -webkit-backdrop-filter: blur(14px);
+      border-top: 1px solid var(--border);
+      padding: 6px 10px calc(6px + var(--safe-bottom));
+      display: flex;
+      justify-content: center;
+    }
+
+    .bottom-nav-inner {
+      width: 100%;
+      max-width: 720px;
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 6px;
+    }
+
+    .nav-item {
+      border: none;
+      background: transparent;
+      color: var(--text-muted);
+      border-radius: var(--radius-md);
+      padding: 7px 4px;
+      min-height: 52px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 4px;
+      font-size: 0.72rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.16s ease;
+    }
+
+    .nav-item.active {
+      color: var(--cyan);
+      background: rgba(6, 182, 212, 0.12);
+    }
+
+    .nav-item svg {
+      width: 22px;
+      height: 22px;
+    }
+
+    /* =========================================================================
+       TOASTS Y MODAL PERSONALIZADO (SIN ALERT / CONFIRM)
+       ========================================================================= */
+    .toast-container {
+      position: fixed;
+      top: 66px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 80;
+      width: calc(100% - 28px);
+      max-width: 440px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      pointer-events: none;
+    }
+
+    .toast {
+      background: #0f172a;
+      border: 1px solid var(--border-strong);
+      border-left: 4px solid var(--cyan);
+      color: var(--text-primary);
+      padding: 11px 14px;
+      border-radius: var(--radius-md);
+      font-size: 0.84rem;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.55);
+      animation: toast-in 0.2s ease-out;
+      pointer-events: auto;
+    }
+
+    .toast.success { border-left-color: var(--iso-a); }
+    .toast.warn { border-left-color: var(--iso-c); }
+    .toast.error { border-left-color: var(--iso-d); }
+
+    @keyframes toast-in {
+      from { opacity: 0; transform: translateY(-8px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    .modal-backdrop {
+      position: fixed;
+      inset: 0;
+      background: rgba(2, 6, 23, 0.76);
+      backdrop-filter: blur(4px);
+      z-index: 90;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 16px;
+    }
+
+    .modal-backdrop.open {
+      display: flex;
+    }
+
+    .modal-box {
+      width: 100%;
+      max-width: 400px;
+      background: var(--bg-card);
+      border: 1px solid var(--border-strong);
+      border-radius: var(--radius-lg);
+      padding: 18px;
+      box-shadow: 0 20px 50px rgba(0, 0, 0, 0.65);
+    }
+
+    .modal-title {
+      font-size: 1rem;
+      font-weight: 700;
+      margin: 0 0 8px;
+    }
+
+    .modal-msg {
+      font-size: 0.86rem;
+      color: var(--text-secondary);
+      margin: 0 0 16px;
+    }
+
+    .modal-actions {
+      display: flex;
+      justify-content: flex-end;
+      gap: 8px;
+    }
+
+    .helper-text {
+      font-size: 0.76rem;
+      color: var(--text-muted);
+      margin-top: 6px;
+    }
+  </style>
+</head>
+<body>
+  <div class="app-shell">
+    <!-- ==================== ENCABEZADO SUPERIOR ==================== -->
+    <header class="top-header">
+      <div class="brand">
+        <div class="brand-icon" aria-hidden="true">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#06b6d4" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="2 13 6 13 9 4 13 20 16 10 18 13 22 13"></polyline>
+          </svg>
+        </div>
+        <div style="min-width:0;">
+          <div class="brand-title">VibroSpec ISO</div>
+          <div class="brand-subtitle">
+            <span id="headerMachineName">Motor Bomba P-101</span>
+            <span>•</span>
+            <span class="mono" id="headerMachineRpm">1800 RPM</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="status-pill" id="liveStatusPill">
+        <span class="status-dot" id="liveStatusDot"></span>
+        <span id="liveStatusText">PAUSA</span>
+      </div>
+    </header>
+
+    <!-- ==================== CONTENIDO PRINCIPAL ==================== -->
+    <main class="main-content">
+
+      <!-- ===========================================================
+           PESTAÑA 1: ANALIZADOR EN VIVO
+           =========================================================== -->
+      <section id="tab-analyzer" class="tab-view active" aria-label="Analizador en tiempo real">
+
+        <!-- Banner de Alerta Prominente ISO 10816 / Huella Base -->
+        <div id="alertBanner" class="alert-banner" role="alert">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0; margin-top:2px;">
+            <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
+            <line x1="12" y1="9" x2="12" y2="13"></line>
+            <line x1="12" y1="17" x2="12.01" y2="17"></line>
+          </svg>
+          <div>
+            <div class="alert-title" id="alertBannerTitle">ALERTA DE SEVERIDAD ISO 10816</div>
+            <div class="alert-desc" id="alertBannerDesc">Amplitud fuera de límites recomendados.</div>
+          </div>
+        </div>
+
+        <!-- Panel de Control de Adquisición y Máquina Activa -->
+        <div class="card">
+          <div class="control-row two-col" style="margin-bottom:10px;">
+            <div class="field-group">
+              <label class="field-label" for="quickMachineSelect">Activo / Máquina en Inspección</label>
+              <select id="quickMachineSelect"></select>
+            </div>
+            <div class="field-group">
+              <label class="field-label" for="quickIsoClassSelect">Clase ISO 10816</label>
+              <select id="quickIsoClassSelect">
+                <option value="I">Clase I — Pequeñas (&lt;15 kW)</option>
+                <option value="II">Clase II — Medianas (15-75 kW)</option>
+                <option value="III">Clase III — Grandes, base rígida</option>
+                <option value="IV">Clase IV — Grandes, base flexible</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="field-label" style="margin-bottom:6px;">Fuente de Adquisición de Señal</div>
+          <div class="segmented" role="tablist" aria-label="Fuente de señal">
+            <button type="button" class="seg-btn" data-mode="accel">
+              <span>Acelerómetro</span>
+              <span style="font-size:0.66rem; opacity:0.75;">Vibración</span>
+            </button>
+            <button type="button" class="seg-btn" data-mode="mic">
+              <span>Micrófono</span>
+              <span style="font-size:0.66rem; opacity:0.75;">Acústico</span>
+            </button>
+            <button type="button" class="seg-btn active" data-mode="sim">
+              <span>Simulador</span>
+              <span style="font-size:0.66rem; opacity:0.75;">Fallas FFT</span>
+            </button>
+          </div>
+
+          <!-- Subcontroles: Eje para Acelerómetro -->
+          <div id="accelControls" class="sub-bar" style="display:none;">
+            <span class="field-label" style="margin-right:4px;">Eje:</span>
+            <div class="chip-group" id="axisChips">
+              <button type="button" class="chip active" data-axis="3D">3D (Mag)</button>
+              <button type="button" class="chip" data-axis="X">Eje X</button>
+              <button type="button" class="chip" data-axis="Y">Eje Y</button>
+              <button type="button" class="chip" data-axis="Z">Eje Z</button>
+            </div>
+            <span class="mono" id="accelFsLabel" style="font-size:0.72rem; color:var(--text-muted);">Fs: -- Hz</span>
+          </div>
+
+          <!-- Subcontroles: Escenarios para Simulador -->
+          <div id="simControls" class="sub-bar">
+            <div class="field-group" style="width:100%;">
+              <label class="field-label" for="simScenarioSelect">Escenario de Falla Industrial (Inyectado al Motor FFT)</label>
+              <select id="simScenarioSelect">
+                <option value="healthy">Máquina Sana (Normal — Zona A)</option>
+                <option value="unbalance">Desbalanceo de Rotor (Pico 1X Dominante)</option>
+                <option value="misalignment">Desalineación de Ejes (Pico 2X Prominente)</option>
+                <option value="looseness">Soltura Mecánica (Armónicos 1X - 4X)</option>
+                <option value="bearing">Falla de Rodamiento (Alta Frecuencia + Acústico)</option>
+              </select>
+            </div>
+          </div>
+
+          <!-- Subcontroles: Micrófono -->
+          <div id="micControls" class="sub-bar" style="display:none;">
+            <span class="helper-text" style="margin:0;">
+              Captura acústica Web Audio API (FFT 2048). Ideal para chirridos de rodamientos, cavitación y rozamientos (0 - 4000 Hz).
+            </span>
+          </div>
+
+          <!-- Botón Principal Iniciar / Pausar + Acciones Rápidas -->
+          <div style="display:grid; grid-template-columns: 1fr; gap:8px; margin-top:12px;">
+            <button type="button" id="btnToggleRun" class="btn btn-start">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><polygon points="6 4 20 12 6 20 6 4"></polygon></svg>
+              <span>Iniciar Adquisición en Vivo</span>
+            </button>
+
+            <div class="action-grid">
+              <button type="button" id="btnCaptureBaseline" class="btn btn-cyan-outline">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"></circle><polyline points="12 7 12 12 15 15"></polyline></svg>
+                <span>Huella Base (2s)</span>
+              </button>
+              <button type="button" id="btnSaveLog" class="btn btn-outline">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path><polyline points="17 21 17 13 7 13 7 21"></polyline><polyline points="7 3 7 8 15 8"></polyline></svg>
+                <span>Guardar Bitácora</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- Progreso de Captura de Huella Base -->
+          <div id="captureProgressBox" class="capture-progress">
+            <div style="display:flex; justify-content:space-between; font-size:0.78rem;">
+              <span style="color:#67e8f9; font-weight:700;">Promediando espectro de Huella Base...</span>
+              <span class="mono" id="captureProgressPct">0%</span>
+            </div>
+            <div class="progress-track">
+              <div class="progress-fill" id="captureProgressFill"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Evaluación Normativa ISO 10816 -->
+        <div class="card">
+          <div class="iso-header">
+            <div class="card-title">
+              <span>Severidad Normativa ISO 10816</span>
+              <span class="mono" id="isoClassTag" style="color:var(--text-primary);">(Clase II)</span>
+            </div>
+            <span id="isoZoneBadge" class="iso-badge zone-a">ZONA A — BUENO</span>
+          </div>
+
+          <div class="iso-meter-wrap">
+            <div class="iso-needle" id="isoNeedle" style="left: 4%;">
+              <div class="iso-needle-val" id="isoNeedleVal">0.00</div>
+            </div>
+            <div class="iso-baseline-pin" id="isoBaselinePin" title="Huella Base RMS"></div>
+            <div class="iso-bar">
+              <div class="iso-seg a" id="isoSegA"></div>
+              <div class="iso-seg b" id="isoSegB"></div>
+              <div class="iso-seg c" id="isoSegC"></div>
+              <div class="iso-seg d" id="isoSegD"></div>
+            </div>
+            <div class="iso-ticks" id="isoTicks"></div>
+          </div>
+        </div>
+
+        <!-- Tarjetas de Telemetría en Vivo -->
+        <div class="kpi-grid">
+          <div class="kpi-card" id="kpiCardVel" style="--kpi-accent: var(--iso-a);">
+            <div class="kpi-label">Velocidad RMS</div>
+            <div class="kpi-value"><span id="valVelRms">0.00</span><span class="kpi-unit">mm/s</span></div>
+            <div class="kpi-sub">
+              <span>vs Base:</span>
+              <span id="valBaselineDelta" class="delta-pill delta-ok">Sin huella</span>
+            </div>
+          </div>
+
+          <div class="kpi-card" style="--kpi-accent: var(--blue-accent);">
+            <div class="kpi-label">Aceleración</div>
+            <div class="kpi-value"><span id="valAccelG">0.00</span><span class="kpi-unit">g RMS</span></div>
+            <div class="kpi-sub">
+              <span>Pico:</span>
+              <span id="valAccelPeak">0.00 g</span>
+            </div>
+          </div>
+
+          <div class="kpi-card" style="--kpi-accent: var(--cyan);">
+            <div class="kpi-label">Frecuencia Pico</div>
+            <div class="kpi-value"><span id="valPeakHz">0.0</span><span class="kpi-unit">Hz</span></div>
+            <div class="kpi-sub">
+              <span id="valPeakCpm">0 CPM</span>
+              <span id="valPeakOrder">0.0X</span>
+            </div>
+          </div>
+
+          <div class="kpi-card" style="--kpi-accent: #a855f7;">
+            <div class="kpi-label">Nivel Acústico</div>
+            <div class="kpi-value"><span id="valAcousticDb">--</span><span class="kpi-unit">dB</span></div>
+            <div class="kpi-sub">
+              <span id="valAcousticNote">Relativo</span>
+              <span id="valFsBadge">512 Hz</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Gráfica Principal: Espectro FFT -->
+        <div class="card">
+          <div class="card-header">
+            <div class="card-title">Espectro FFT en Tiempo Real</div>
+            <span class="tag cyan" id="fftMetaTag">1X = 30.0 Hz</span>
+          </div>
+          <div class="canvas-box canvas-fft">
+            <canvas id="fftCanvas"></canvas>
+          </div>
+          <div class="chart-legend">
+            <span class="legend-item"><span class="legend-line" id="legendLiveColor" style="background:var(--iso-a);"></span> Espectro en vivo</span>
+            <span class="legend-item"><span class="legend-dashed"></span> Huella Base (Estado Sano)</span>
+            <span class="legend-item"><span class="legend-line" style="background:rgba(250,204,21,0.7); width:10px;"></span> Armónicos 1X / 2X / 3X</span>
+          </div>
+        </div>
+
+        <!-- Gráfica Secundaria: Osciloscopio -->
+        <div class="card">
+          <div class="card-header">
+            <div class="card-title">Osciloscopio — Forma de Onda (Tiempo)</div>
+            <span class="mono" id="waveAmpTag" style="font-size:0.74rem; color:var(--text-secondary);">±0.00 g</span>
+          </div>
+          <div class="canvas-box canvas-wave">
+            <canvas id="waveCanvas"></canvas>
+          </div>
+        </div>
+
+        <!-- Resumen rápido de diagnóstico en vivo -->
+        <div class="card">
+          <div class="card-header">
+            <div class="card-title">Diagnóstico Preliminar en Vivo</div>
+            <button type="button" class="btn btn-sm btn-outline" id="btnGoDiag">Ver detalle</button>
+          </div>
+          <div id="liveDiagQuick" style="font-size:0.86rem; color:#e2e8f0;">
+            Inicie la adquisición para evaluar armónicos 1X, 2X, 3X y energía de alta frecuencia.
+          </div>
+        </div>
+      </section>
+
+      <!-- ===========================================================
+           PESTAÑA 2: MÁQUINAS Y HUELLA BASE
+           =========================================================== -->
+      <section id="tab-machines" class="tab-view" aria-label="Gestión de máquinas y huella base">
+        <div class="card">
+          <div class="card-header">
+            <div class="card-title">Registrar Nuevo Activo Industrial</div>
+          </div>
+          <form id="machineForm" style="display:flex; flex-direction:column; gap:10px;">
+            <div class="field-group">
+              <label class="field-label" for="newMachineName">Nombre / Tag del Equipo</label>
+              <input type="text" id="newMachineName" placeholder="Ej. Bomba Hidráulica B-204" required maxlength="48" />
+            </div>
+            <div class="control-row two-col">
+              <div class="field-group">
+                <label class="field-label" for="newMachineRpm">Velocidad Nominal (RPM)</label>
+                <input type="number" id="newMachineRpm" value="1800" min="120" max="12000" step="10" required />
+              </div>
+              <div class="field-group">
+                <label class="field-label" for="newMachineIso">Clase ISO 10816</label>
+                <select id="newMachineIso">
+                  <option value="I">Clase I (&lt;15 kW)</option>
+                  <option value="II" selected>Clase II (15-75 kW)</option>
+                  <option value="III">Clase III (Grande rígida)</option>
+                  <option value="IV">Clase IV (Grande flexible)</option>
+                </select>
+              </div>
+            </div>
+            <button type="submit" class="btn btn-primary">
+              <span>+ Agregar Máquina al Catálogo</span>
+            </button>
+          </form>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <div class="card-title">Activos Configurados y Huellas Base</div>
+            <span class="tag" id="machineCountTag">3 equipos</span>
+          </div>
+          <div id="machineList" class="machine-list"></div>
+          <p class="helper-text">
+            Consejo de campo: Seleccione la máquina en buen estado operativo, pulse "Huella Base (2s)" en el Analizador para guardar su firma espectral y detectar desviaciones futuras (&gt; +35%).
+          </p>
+        </div>
+      </section>
+
+      <!-- ===========================================================
+           PESTAÑA 3: DIAGNÓSTICO E HISTORIAL (BITÁCORA)
+           =========================================================== -->
+      <section id="tab-diagnostics" class="tab-view" aria-label="Diagnóstico técnico y bitácora">
+        <div class="card">
+          <div class="card-header">
+            <div class="card-title">Motor de Diagnóstico Espectral</div>
+            <span id="diagZoneBadge" class="iso-badge zone-a">ZONA A</span>
+          </div>
+
+          <div class="diag-box" id="diagBox">
+            <div class="diag-fault" id="diagFaultTitle">En espera de señal</div>
+            <div class="diag-summary" id="diagFaultSummary">
+              Active el analizador en la pestaña principal para calcular los niveles por banda espectral y emitir recomendaciones de mantenimiento.
+            </div>
+            <ul class="diag-list" id="diagRecommendations">
+              <li>Coloque el smartphone firmemente sobre la carcasa del rodamiento o bancada del equipo.</li>
+              <li>Verifique que las RPM nominales configuradas coincidan con la placa del motor.</li>
+            </ul>
+          </div>
+
+          <div class="harmonic-pills">
+            <div class="h-pill">
+              <div class="h-pill-lbl">1X (Desbal.)</div>
+              <div class="h-pill-val" id="band1X">0.00</div>
+            </div>
+            <div class="h-pill">
+              <div class="h-pill-lbl">2X (Desal.)</div>
+              <div class="h-pill-val" id="band2X">0.00</div>
+            </div>
+            <div class="h-pill">
+              <div class="h-pill-lbl">3X-4X (Solt.)</div>
+              <div class="h-pill-val" id="band3X">0.00</div>
+            </div>
+            <div class="h-pill">
+              <div class="h-pill-lbl">Alta Frec.</div>
+              <div class="h-pill-val" id="bandHF">0.00</div>
+            </div>
+          </div>
+
+          <div style="margin-top:12px;">
+            <button type="button" id="btnSaveLogDiag" class="btn btn-primary" style="width:100%;">
+              <span>Guardar Medición Actual en Bitácora</span>
+            </button>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header" style="flex-wrap:wrap;">
+            <div class="card-title">Bitácora de Inspecciones (<span id="logCount">0</span>)</div>
+            <div style="display:flex; gap:6px;">
+              <button type="button" id="btnExportCsv" class="btn btn-sm btn-cyan-outline">Exportar CSV</button>
+              <button type="button" id="btnClearLogs" class="btn btn-sm btn-danger-outline">Limpiar</button>
+            </div>
+          </div>
+          <div id="historyList" class="history-list"></div>
+        </div>
+      </section>
+    </main>
+
+    <!-- ==================== NAVEGACIÓN INFERIOR FIJA ==================== -->
+    <nav class="bottom-nav" aria-label="Navegación principal">
+      <div class="bottom-nav-inner">
+        <button type="button" class="nav-item active" data-tab="tab-analyzer">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline>
+          </svg>
+          <span>Analizador</span>
+        </button>
+        <button type="button" class="nav-item" data-tab="tab-machines">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="3"></circle>
+            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9c.26.6.85 1 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+          </svg>
+          <span>Máquinas y Huella</span>
+        </button>
+        <button type="button" class="nav-item" data-tab="tab-diagnostics">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+            <polyline points="14 2 14 8 20 8"></polyline>
+            <line x1="16" y1="13" x2="8" y2="13"></line>
+            <line x1="16" y1="17" x2="8" y2="17"></line>
+            <polyline points="10 9 9 9 8 9"></polyline>
+          </svg>
+          <span>Diagnóstico / Historial</span>
+        </button>
+      </div>
+    </nav>
+  </div>
+
+  <!-- Contenedor de Toasts -->
+  <div class="toast-container" id="toastContainer"></div>
+
+  <!-- Modal de Confirmación Personalizado -->
+  <div class="modal-backdrop" id="confirmModal" role="dialog" aria-modal="true">
+    <div class="modal-box">
+      <h3 class="modal-title" id="modalTitle">Confirmar acción</h3>
+      <p class="modal-msg" id="modalMsg">¿Desea continuar?</p>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-sm btn-outline" id="modalCancelBtn">Cancelar</button>
+        <button type="button" class="btn btn-sm btn-stop" id="modalConfirmBtn">Confirmar</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    (() => {
+      'use strict';
+
+      /* =========================================================================
+         1. CONSTANTES NORMATIVAS ISO 10816 Y ESTADO PERSISTENTE
+         ========================================================================= */
+      const STORAGE_KEYS = {
+        machines: 'vibrospec_iso_machines_v1',
+        logs: 'vibrospec_iso_logs_v1',
+        selectedMachine: 'vibrospec_iso_selected_v1'
+      };
+
+      const ISO_CLASSES = {
+        I:   { name: 'Clase I',   desc: 'Pequeñas (<15 kW)',          limits: [0.71, 1.8, 4.5],  maxScale: 9.0 },
+        II:  { name: 'Clase II',  desc: 'Medianas (15-75 kW)',        limits: [1.12, 2.8, 7.1],  maxScale: 14.2 },
+        III: { name: 'Clase III', desc: 'Grandes, base rígida',       limits: [1.8, 4.5, 11.2],  maxScale: 22.0 },
+        IV:  { name: 'Clase IV',  desc: 'Grandes, base flexible',     limits: [2.8, 7.1, 18.0],  maxScale: 32.0 }
+      };
+
+      const DEFAULT_MACHINES = [
+        { id: 'm-p101', name: 'Motor Bomba P-101', rpm: 1800, isoClass: 'II', baseline: null },
+        { id: 'm-v04',  name: 'Ventilador Extractor V-04', rpm: 1200, isoClass: 'II', baseline: null },
+        { id: 'm-c02',  name: 'Compresor Principal C-02', rpm: 3600, isoClass: 'III', baseline: null }
+      ];
+
+      // Estado general de la aplicación
+      const state = {
+        machines: [],
+        selectedMachineId: 'm-p101',
+        logs: [],
+        mode: 'sim',           // 'accel' | 'mic' | 'sim'
+        axis: '3D',            // '3D' | 'X' | 'Y' | 'Z'
+        simScenario: 'healthy',
+        isRunning: false,
+
+        // Adquisición Acelerómetro
+        accelBuffer: new Float32Array(256),
+        accelWriteCount: 0,
+        accelLastTime: 0,
+        accelFs: 60,
+        gravity: { x: 0, y: 0, z: 9.81 },
+        accelListenerBound: null,
+
+        // Adquisición Micrófono (Web Audio API)
+        audioCtx: null,
+        mediaStream: null,
+        analyser: null,
+        micFreqData: null,
+        micTimeData: null,
+
+        // Simulador industrial (512 Hz, FFT 512 => resolución 1 Hz, Nyquist 256 Hz)
+        simFs: 512,
+        simN: 512,
+        simPhase: 0,
+        simTimeBuffer: new Float32Array(512),
+
+        // Últimos resultados procesados para UI, gráficas y registro
+        latest: {
+          spectrum: new Float32Array(256), // Velocidad mm/s por bin (o magnitud acústica)
+          maxFreq: 256,
+          fs: 512,
+          waveform: new Float32Array(256),
+          velRms: 0,
+          accelRmsG: 0,
+          accelPeakG: 0,
+          peakFreqHz: 0,
+          peakAmp: 0,
+          acousticDb: 0,
+          isoZone: { code: 'A', label: 'ZONA A — BUENO', color: '#10b981', cssClass: 'zone-a' },
+          deltaPct: null,
+          bands: { b1x: 0, b2x: 0, b3x: 0, bHf: 0 },
+          diagnosis: {
+            title: 'En espera de señal',
+            summary: 'Active la adquisición para analizar la firma espectral de la máquina.',
+            severityColor: '#10b981',
+            recommendations: [
+              'Asegure un buen acoplamiento físico del celular sobre la carcasa del equipo.',
+              'Confirme las RPM nominales antes de interpretar los armónicos 1X, 2X y 3X.'
+            ]
+          }
+        },
+
+        // Captura de Huella Base (promediado de 2 segundos)
+        baselineCapture: {
+          active: false,
+          startTime: 0,
+          durationMs: 2000,
+          frames: 0,
+          accSpectrum: null,
+          accVelRms: 0,
+          accDb: 0,
+          maxFreq: 256
+        },
+
+        rafId: null,
+        lastProcessTime: 0
+      };
+
+      /* =========================================================================
+         2. REFERENCIAS DOM
+         ========================================================================= */
+      const $ = (id) => document.getElementById(id);
+
+      const dom = {
+        headerMachineName: $('headerMachineName'),
+        headerMachineRpm: $('headerMachineRpm'),
+        liveStatusDot: $('liveStatusDot'),
+        liveStatusText: $('liveStatusText'),
+
+        alertBanner: $('alertBanner'),
+        alertBannerTitle: $('alertBannerTitle'),
+        alertBannerDesc: $('alertBannerDesc'),
+
+        quickMachineSelect: $('quickMachineSelect'),
+        quickIsoClassSelect: $('quickIsoClassSelect'),
+        accelControls: $('accelControls'),
+        simControls: $('simControls'),
+        micControls: $('micControls'),
+        accelFsLabel: $('accelFsLabel'),
+        simScenarioSelect: $('simScenarioSelect'),
+
+        btnToggleRun: $('btnToggleRun'),
+        btnCaptureBaseline: $('btnCaptureBaseline'),
+        btnSaveLog: $('btnSaveLog'),
+        btnSaveLogDiag: $('btnSaveLogDiag'),
+        btnGoDiag: $('btnGoDiag'),
+
+        captureProgressBox: $('captureProgressBox'),
+        captureProgressPct: $('captureProgressPct'),
+        captureProgressFill: $('captureProgressFill'),
+
+        isoClassTag: $('isoClassTag'),
+        isoZoneBadge: $('isoZoneBadge'),
+        isoNeedle: $('isoNeedle'),
+        isoNeedleVal: $('isoNeedleVal'),
+        isoBaselinePin: $('isoBaselinePin'),
+        isoSegA: $('isoSegA'),
+        isoSegB: $('isoSegB'),
+        isoSegC: $('isoSegC'),
+        isoSegD: $('isoSegD'),
+        isoTicks: $('isoTicks'),
+
+        kpiCardVel: $('kpiCardVel'),
+        valVelRms: $('valVelRms'),
+        valBaselineDelta: $('valBaselineDelta'),
+        valAccelG: $('valAccelG'),
+        valAccelPeak: $('valAccelPeak'),
+        valPeakHz: $('valPeakHz'),
+        valPeakCpm: $('valPeakCpm'),
+        valPeakOrder: $('valPeakOrder'),
+        valAcousticDb: $('valAcousticDb'),
+        valAcousticNote: $('valAcousticNote'),
+        valFsBadge: $('valFsBadge'),
+
+        fftCanvas: $('fftCanvas'),
+        waveCanvas: $('waveCanvas'),
+        fftMetaTag: $('fftMetaTag'),
+        legendLiveColor: $('legendLiveColor'),
+        waveAmpTag: $('waveAmpTag'),
+        liveDiagQuick: $('liveDiagQuick'),
+
+        // Pestaña Máquinas
+        machineForm: $('machineForm'),
+        newMachineName: $('newMachineName'),
+        newMachineRpm: $('newMachineRpm'),
+        newMachineIso: $('newMachineIso'),
+        machineList: $('machineList'),
+        machineCountTag: $('machineCountTag'),
+
+        // Pestaña Diagnóstico / Historial
+        diagZoneBadge: $('diagZoneBadge'),
+        diagBox: $('diagBox'),
+        diagFaultTitle: $('diagFaultTitle'),
+        diagFaultSummary: $('diagFaultSummary'),
+        diagRecommendations: $('diagRecommendations'),
+        band1X: $('band1X'),
+        band2X: $('band2X'),
+        band3X: $('band3X'),
+        bandHF: $('bandHF'),
+        historyList: $('historyList'),
+        logCount: $('logCount'),
+        btnExportCsv: $('btnExportCsv'),
+        btnClearLogs: $('btnClearLogs'),
+
+        // Toasts y Modal
+        toastContainer: $('toastContainer'),
+        confirmModal: $('confirmModal'),
+        modalTitle: $('modalTitle'),
+        modalMsg: $('modalMsg'),
+        modalCancelBtn: $('modalCancelBtn'),
+        modalConfirmBtn: $('modalConfirmBtn')
+      };
+
+      /* =========================================================================
+         3. UTILIDADES DE UI (TOASTS Y MODAL SIN ALERT/CONFIRM)
+         ========================================================================= */
+      function showToast(message, type = 'info') {
+        const el = document.createElement('div');
+        el.className = `toast ${type}`;
+        el.textContent = message;
+        dom.toastContainer.appendChild(el);
+        setTimeout(() => {
+          el.style.opacity = '0';
+          el.style.transform = 'translateY(-6px)';
+          el.style.transition = 'all 0.2s ease';
+          setTimeout(() => el.remove(), 220);
+        }, 3200);
+      }
+
+      let modalOnConfirm = null;
+      function openConfirmModal(title, message, onConfirm) {
+        dom.modalTitle.textContent = title;
+        dom.modalMsg.textContent = message;
+        modalOnConfirm = onConfirm;
+        dom.confirmModal.classList.add('open');
+      }
+
+      function closeConfirmModal() {
+        dom.confirmModal.classList.remove('open');
+        modalOnConfirm = null;
+      }
+
+      dom.modalCancelBtn.addEventListener('click', closeConfirmModal);
+      dom.confirmModal.addEventListener('click', (e) => {
+        if (e.target === dom.confirmModal) closeConfirmModal();
+      });
+      dom.modalConfirmBtn.addEventListener('click', () => {
+        const cb = modalOnConfirm;
+        closeConfirmModal();
+        if (typeof cb === 'function') cb();
+      });
+
+      /* =========================================================================
+         4. PERSISTENCIA EN LOCALSTORAGE (MÁQUINAS, HUELLAS Y BITÁCORA)
+         ========================================================================= */
+      function loadStorage() {
+        try {
+          const rawMachines = localStorage.getItem(STORAGE_KEYS.machines);
+          state.machines = rawMachines ? JSON.parse(rawMachines) : JSON.parse(JSON.stringify(DEFAULT_MACHINES));
+          if (!Array.isArray(state.machines) || state.machines.length === 0) {
+            state.machines = JSON.parse(JSON.stringify(DEFAULT_MACHINES));
+          }
+          const savedSel = localStorage.getItem(STORAGE_KEYS.selectedMachine);
+          if (savedSel && state.machines.some(m => m.id === savedSel)) {
+            state.selectedMachineId = savedSel;
+          } else {
+            state.selectedMachineId = state.machines[0].id;
+          }
+          const rawLogs = localStorage.getItem(STORAGE_KEYS.logs);
+          state.logs = rawLogs ? JSON.parse(rawLogs) : [];
+          if (!Array.isArray(state.logs)) state.logs = [];
+        } catch (err) {
+          console.error('Error cargando localStorage:', err);
+          state.machines = JSON.parse(JSON.stringify(DEFAULT_MACHINES));
+          state.selectedMachineId = state.machines[0].id;
+          state.logs = [];
+        }
+      }
+
+      function saveMachines() {
+        try {
+          localStorage.setItem(STORAGE_KEYS.machines, JSON.stringify(state.machines));
+          localStorage.setItem(STORAGE_KEYS.selectedMachine, state.selectedMachineId);
+        } catch (err) {
+          showToast('No se pudo guardar en almacenamiento local.', 'error');
+        }
+      }
+
+      function saveLogs() {
+        try {
+          localStorage.setItem(STORAGE_KEYS.logs, JSON.stringify(state.logs));
+        } catch (err) {
+          showToast('Error al guardar la bitácora.', 'error');
+        }
+      }
+
+      function getActiveMachine() {
+        return state.machines.find(m => m.id === state.selectedMachineId) || state.machines[0];
+      }
+
+      /* =========================================================================
+         5. MOTOR DSP: VENTANA DE HANNING + FFT COOLEY-TUKEY RADIX-2 REAL
+         ========================================================================= */
+      /**
+       * Ejecuta la Transformada Rápida de Fourier (Cooley-Tukey Radix-2 in-place).
+       * @param {Float32Array} re - Parte real (longitud potencia de 2)
+       * @param {Float32Array} im - Parte imaginaria (inicializada en 0)
+       */
+      function fftRadix2(re, im) {
+        const n = re.length;
+        // Permutación por inversión de bits
+        let j = 0;
+        for (let i = 0; i < n; i++) {
+          if (i < j) {
+            const tr = re[i]; re[i] = re[j]; re[j] = tr;
+            const ti = im[i]; im[i] = im[j]; im[j] = ti;
+          }
+          let m = n >> 1;
+          while (m >= 1 && j >= m) {
+            j -= m;
+            m >>= 1;
+          }
+          j += m;
+        }
+
+        // Etapas mariposa
+        for (let size = 2; size <= n; size <<= 1) {
+          const half = size >> 1;
+          const angleStep = (-2 * Math.PI) / size;
+          const wStepRe = Math.cos(angleStep);
+          const wStepIm = Math.sin(angleStep);
+
+          for (let start = 0; start < n; start += size) {
+            let wRe = 1.0;
+            let wIm = 0.0;
+            for (let k = 0; k < half; k++) {
+              const evenIdx = start + k;
+              const oddIdx = evenIdx + half;
+              const oRe = re[oddIdx] * wRe - im[oddIdx] * wIm;
+              const oIm = re[oddIdx] * wIm + im[oddIdx] * wRe;
+
+              re[oddIdx] = re[evenIdx] - oRe;
+              im[oddIdx] = im[evenIdx] - oIm;
+              re[evenIdx] += oRe;
+              im[evenIdx] += oIm;
+
+              const nextWRe = wRe * wStepRe - wIm * wStepIm;
+              wIm = wRe * wStepIm + wIm * wStepRe;
+              wRe = nextWRe;
+            }
+          }
+        }
+      }
+
+      /**
+       * Procesa una señal temporal de aceleración (m/s²), aplica Hanning + FFT,
+       * integra en frecuencia A/(2*pi*f) para obtener velocidad espectral (mm/s RMS)
+       * y calcula todos los KPIs mecánicos.
+       */
+      function analyzeAccelerationSignal(timeSignalMs2, fs, simulatedDb = null) {
+        const N = timeSignalMs2.length;
+        const halfN = N >> 1;
+        const re = new Float32Array(N);
+        const im = new Float32Array(N);
+
+        // Remover DC residual y calcular estadísticas temporales
+        let mean = 0;
+        for (let i = 0; i < N; i++) mean += timeSignalMs2[i];
+        mean /= N;
+
+        let sumSqAcc = 0;
+        let peakAccMs2 = 0;
+        const waveformG = new Float32Array(N);
+
+        // Aplicar ventana de Hanning (factor de corrección de amplitud coherente = 2.0)
+        for (let i = 0; i < N; i++) {
+          const val = timeSignalMs2[i] - mean;
+          sumSqAcc += val * val;
+          const absVal = Math.abs(val);
+          if (absVal > peakAccMs2) peakAccMs2 = absVal;
+          waveformG[i] = val / 9.80665;
+
+          const hann = 0.5 * (1 - Math.cos((2 * Math.PI * i) / (N - 1)));
+          re[i] = val * hann;
+        }
+
+        fftRadix2(re, im);
+
+        const df = fs / N;
+        const velSpectrum = new Float32Array(halfN); // mm/s RMS por bin
+        let sumVelSq = 0;
+        let peakFreqHz = 0;
+        let peakAmp = 0;
+
+        // Corrección de amplitud para FFT de un solo lado con ventana Hanning:
+        // Amplitud pico = (2 / N) * 2.0 * mag = (4 / N) * mag
+        // Amplitud RMS de bin = Pico / sqrt(2)
+        const scaleRms = (4.0 / N) / Math.SQRT2;
+        // Corrección de energía de ruido de ventana Hanning (ENBW = 1.5)
+        const enbwCorrection = Math.sqrt(1 / 1.5);
+
+        for (let k = 1; k < halfN; k++) {
+          const freq = k * df;
+          const mag = Math.hypot(re[k], im[k]);
+          const accRmsMs2 = mag * scaleRms;
+
+          // Integración en frecuencia: v(f) [mm/s] = (a(f) [m/s²] * 1000) / (2 * pi * f)
+          // Filtro de integración > 2 Hz para suprimir deriva de baja frecuencia
+          let velRmsMmS = 0;
+          if (freq > 2.0) {
+            velRmsMmS = (accRmsMs2 * 1000.0) / (2.0 * Math.PI * freq);
+          }
+
+          velSpectrum[k] = velRmsMmS;
+
+          // Suma espectral de Parseval en banda ISO (f >= 4 Hz hasta Nyquist)
+          if (freq >= 4.0) {
+            sumVelSq += velRmsMmS * velRmsMmS;
+          }
+
+          if (freq > 2.5 && velRmsMmS > peakAmp) {
+            peakAmp = velRmsMmS;
+            peakFreqHz = freq;
+          }
+        }
+
+        const totalVelRms = Math.sqrt(sumVelSq) * enbwCorrection;
+        const accelRmsG = Math.sqrt(sumSqAcc / N) / 9.80665;
+        const accelPeakG = peakAccMs2 / 9.80665;
+
+        // Estimación acústica si estamos en acelerómetro (no hay mic activo)
+        const acousticDb = simulatedDb !== null
+          ? simulatedDb
+          : Math.max(38, Math.min(110, 48 + 20 * Math.log10(accelRmsG * 10 + 0.1)));
+
+        return {
+          spectrum: velSpectrum,
+          maxFreq: fs / 2,
+          fs,
+          waveform: waveformG,
+          velRms: totalVelRms,
+          accelRmsG,
+          accelPeakG,
+          peakFreqHz,
+          peakAmp,
+          acousticDb
+        };
+      }
+
+      /* =========================================================================
+         6. GENERADOR DEL SIMULADOR DE FALLAS INDUSTRIALES
+         ========================================================================= */
+      function generateSimulatorFrame() {
+        const machine = getActiveMachine();
+        const f1 = Math.max(5, Math.min(100, machine.rpm / 60)); // Frecuencia fundamental 1X (Hz)
+        const fs = state.simFs;
+        const N = state.simN;
+        const dt = 1 / fs;
+        const buf = state.simTimeBuffer;
+
+        // Avanzamos la fase continuamente para animación fluida del osciloscopio
+        const stepSamples = 24;
+        state.simPhase += stepSamples * dt;
+        const t0 = state.simPhase;
+
+        // Helper: convierte velocidad deseada (mm/s RMS) a amplitud pico de aceleración (m/s²)
+        // a_peak = v_rms * sqrt(2) * (2 * pi * f) / 1000
+        const velToAccPeak = (vRmsMmS, freqHz) => {
+          return (vRmsMmS * Math.SQRT2 * 2 * Math.PI * freqHz) / 1000;
+        };
+
+        const scenario = state.simScenario;
+        let simDb = 61;
+
+        for (let i = 0; i < N; i++) {
+          const t = t0 + i * dt;
+          // Ruido blanco ligero realista de piso de vibración
+          const noise = (Math.random() - 0.5) * 0.14;
+          let acc = noise;
+
+          // Pequeña fluctuación realista de carga del motor
+          const mod = 1 + 0.04 * Math.sin(2 * Math.PI * 0.7 * t);
+
+          if (scenario === 'healthy') {
+            acc += velToAccPeak(0.45 * mod, f1) * Math.sin(2 * Math.PI * f1 * t);
+            acc += velToAccPeak(0.14, f1 * 2) * Math.sin(2 * Math.PI * f1 * 2 * t + 0.6);
+            acc += velToAccPeak(0.06, f1 * 3) * Math.sin(2 * Math.PI * f1 * 3 * t + 1.1);
+            simDb = 60.5 + (Math.random() - 0.5) * 1.2;
+          } else if (scenario === 'unbalance') {
+            // Desbalanceo clásico: pico 1X muy dominante
+            acc += velToAccPeak(5.4 * mod, f1) * Math.sin(2 * Math.PI * f1 * t);
+            acc += velToAccPeak(0.45, f1 * 2) * Math.sin(2 * Math.PI * f1 * 2 * t + 0.4);
+            acc += velToAccPeak(0.18, f1 * 3) * Math.sin(2 * Math.PI * f1 * 3 * t);
+            simDb = 72.5 + (Math.random() - 0.5) * 1.5;
+          } else if (scenario === 'misalignment') {
+            // Desalineación: 2X dominante + 1X elevado + ligero 3X
+            acc += velToAccPeak(2.2 * mod, f1) * Math.sin(2 * Math.PI * f1 * t);
+            acc += velToAccPeak(5.8 * mod, f1 * 2) * Math.sin(2 * Math.PI * f1 * 2 * t + 0.9);
+            acc += velToAccPeak(1.3, f1 * 3) * Math.sin(2 * Math.PI * f1 * 3 * t + 1.5);
+            simDb = 75.0 + (Math.random() - 0.5) * 1.6;
+          } else if (scenario === 'looseness') {
+            // Soltura mecánica: múltiples armónicos 1X, 2X, 3X, 4X y subarmónico 0.5X
+            acc += velToAccPeak(1.1, f1 * 0.5) * Math.sin(2 * Math.PI * f1 * 0.5 * t);
+            acc += velToAccPeak(4.1 * mod, f1) * Math.sin(2 * Math.PI * f1 * t);
+            acc += velToAccPeak(3.9 * mod, f1 * 2) * Math.sin(2 * Math.PI * f1 * 2 * t + 0.3);
+            acc += velToAccPeak(4.6 * mod, f1 * 3) * Math.sin(2 * Math.PI * f1 * 3 * t + 1.1);
+            if (f1 * 4 < fs * 0.48) {
+              acc += velToAccPeak(3.2 * mod, f1 * 4) * Math.sin(2 * Math.PI * f1 * 4 * t + 0.7);
+            }
+            acc += (Math.random() - 0.5) * 1.4; // Piso ruidoso elevado
+            simDb = 81.2 + (Math.random() - 0.5) * 2.2;
+          } else if (scenario === 'bearing') {
+            // Falla de rodamiento: energía en frecuencias no síncronas de alta frecuencia (BPFO/BPFI)
+            acc += velToAccPeak(0.75, f1) * Math.sin(2 * Math.PI * f1 * t);
+            acc += velToAccPeak(0.42, f1 * 2) * Math.sin(2 * Math.PI * f1 * 2 * t);
+
+            // Frecuencias de falla de rodamiento adaptadas dentro del rango Nyquist (<= 240 Hz)
+            const fBpfo = Math.min(215, Math.max(145, f1 * 4.35));
+            const fBpfi = Math.min(238, Math.max(178, f1 * 5.65));
+            const env = 1 + 0.55 * Math.sin(2 * Math.PI * f1 * t); // Modulación por giro de pista
+
+            acc += velToAccPeak(3.8 * env, fBpfo) * Math.sin(2 * Math.PI * fBpfo * t);
+            acc += velToAccPeak(2.9 * env, fBpfi) * Math.sin(2 * Math.PI * fBpfi * t + 0.8);
+            acc += (Math.random() - 0.5) * 3.2; // Ruido impulsivo de alta frecuencia
+            simDb = 89.4 + (Math.random() - 0.5) * 2.6;
+          }
+
+          buf[i] = acc;
+        }
+
+        return analyzeAccelerationSignal(buf, fs, simDb);
+      }
+
+      /* =========================================================================
+         7. SENSORES REALES: ACELERÓMETRO (DeviceMotion) Y MICRÓFONO (Web Audio)
+         ========================================================================= */
+      async function startAccelerometer() {
+        if (typeof window.DeviceMotionEvent === 'undefined') {
+          showToast('Este dispositivo/navegador no soporta acelerómetro. Use el Simulador.', 'warn');
+          return false;
+        }
+
+        // Permiso obligatorio en iOS 13+
+        if (typeof DeviceMotionEvent.requestPermission === 'function') {
+          try {
+            const response = await DeviceMotionEvent.requestPermission();
+            if (response !== 'granted') {
+              showToast('Permiso de acelerómetro denegado por el usuario.', 'error');
+              return false;
+            }
+          } catch (err) {
+            showToast('No se pudo solicitar permiso del acelerómetro (requiere HTTPS).', 'error');
+            return false;
+          }
+        }
+
+        state.accelBuffer.fill(0);
+        state.accelWriteCount = 0;
+        state.accelLastTime = 0;
+
+        state.accelListenerBound = (e) => {
+          const now = performance.now();
+          if (state.accelLastTime > 0) {
+            const dtSec = (now - state.accelLastTime) / 1000;
+            if (dtSec > 0.002 && dtSec < 0.25) {
+              const instFs = 1 / dtSec;
+              state.accelFs = state.accelFs * 0.9 + instFs * 0.1;
+            }
+          }
+          state.accelLastTime = now;
+
+          let ax = 0, ay = 0, az = 0;
+          // Preferir acceleration (ya compensada) o aplicar filtro pasa-altas sobre accelerationIncludingGravity
+          if (e.acceleration && e.acceleration.x !== null && e.acceleration.y !== null && e.acceleration.z !== null) {
+            ax = e.acceleration.x || 0;
+            ay = e.acceleration.y || 0;
+            az = e.acceleration.z || 0;
+          } else if (e.accelerationIncludingGravity) {
+            const gx = e.accelerationIncludingGravity.x || 0;
+            const gy = e.accelerationIncludingGravity.y || 0;
+            const gz = e.accelerationIncludingGravity.z || 0;
+            const alpha = 0.85;
+            state.gravity.x = alpha * state.gravity.x + (1 - alpha) * gx;
+            state.gravity.y = alpha * state.gravity.y + (1 - alpha) * gy;
+            state.gravity.z = alpha * state.gravity.z + (1 - alpha) * gz;
+            ax = gx - state.gravity.x;
+            ay = gy - state.gravity.y;
+            az = gz - state.gravity.z;
+          } else {
+            return;
+          }
+
+          let sample = 0;
+          if (state.axis === 'X') sample = ax;
+          else if (state.axis === 'Y') sample = ay;
+          else if (state.axis === 'Z') sample = az;
+          else {
+            // Magnitud 3D con signo del eje dominante para preservar oscilación bipolar en osciloscopio y FFT
+            const mag = Math.hypot(ax, ay, az);
+            const dom = Math.abs(az) >= Math.abs(ax) && Math.abs(az) >= Math.abs(ay)
+              ? az
+              : (Math.abs(ax) >= Math.abs(ay) ? ax : ay);
+            sample = dom >= 0 ? mag : -mag;
+          }
+
+          // Desplazar búfer circular FIFO
+          state.accelBuffer.copyWithin(0, 1);
+          state.accelBuffer[state.accelBuffer.length - 1] = sample;
+          state.accelWriteCount++;
+        };
+
+        window.addEventListener('devicemotion', state.accelListenerBound);
+
+        // Verificar tras 1.2 s si realmente llegan muestras (en PC de escritorio no llegan)
+        setTimeout(() => {
+          if (state.isRunning && state.mode === 'accel' && state.accelWriteCount < 3) {
+            showToast('No se detectan datos del acelerómetro en este dispositivo. Pruebe en celular o use el Simulador.', 'warn');
+          }
+        }, 1200);
+
+        return true;
+      }
+
+      function stopAccelerometer() {
+        if (state.accelListenerBound) {
+          window.removeEventListener('devicemotion', state.accelListenerBound);
+          state.accelListenerBound = null;
+        }
+      }
+
+      async function startMicrophone() {
+        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+          showToast('El navegador no permite acceso al micrófono (requiere HTTPS o localhost).', 'error');
+          return false;
+        }
+
+        try {
+          const stream = await navigator.mediaDevices.getUserMedia({
+            audio: {
+              echoCancellation: false,
+              noiseSuppression: false,
+              autoGainControl: false
+            }
+          });
+          const AudioCtx = window.AudioContext || window.webkitAudioContext;
+          const ctx = new AudioCtx();
+          const source = ctx.createMediaStreamSource(stream);
+          const analyser = ctx.createAnalyser();
+          analyser.fftSize = 2048;
+          analyser.smoothingTimeConstant = 0.65;
+          source.connect(analyser);
+
+          state.mediaStream = stream;
+          state.audioCtx = ctx;
+          state.analyser = analyser;
+          state.micFreqData = new Uint8Array(analyser.frequencyBinCount);
+          state.micTimeData = new Float32Array(analyser.fftSize);
+          return true;
+        } catch (err) {
+          showToast('No se pudo activar el micrófono: permiso denegado o dispositivo no disponible.', 'error');
+          return false;
+        }
+      }
+
+      function stopMicrophone() {
+        if (state.mediaStream) {
+          state.mediaStream.getTracks().forEach(t => t.stop());
+          state.mediaStream = null;
+        }
+        if (state.audioCtx) {
+          state.audioCtx.close().catch(() => {});
+          state.audioCtx = null;
+        }
+        state.analyser = null;
+      }
+
+      function processMicrophoneFrame() {
+        if (!state.analyser) return null;
+        state.analyser.getByteFrequencyData(state.micFreqData);
+        state.analyser.getFloatTimeDomainData(state.micTimeData);
+
+        const sampleRate = state.audioCtx.sampleRate || 44100;
+        const binCount = state.analyser.frequencyBinCount; // 1024
+        const df = sampleRate / state.analyser.fftSize;
+
+        // Limitamos la visualización acústica útil a 0 - 4000 Hz (donde aparecen rodamientos, cavitación y zumbidos)
+        const targetMaxFreq = 4000;
+        const usefulBins = Math.min(binCount, Math.max(64, Math.floor(targetMaxFreq / df)));
+        const spectrum = new Float32Array(usefulBins);
+
+        let peakVal = 0;
+        let peakHz = 0;
+        let sumEnergy = 0;
+
+        for (let k = 1; k < usefulBins; k++) {
+          // Normalizar 0..255 a escala visual equivalente (0..12 mm/s eq. acústica para escala gráfica)
+          const norm = state.micFreqData[k] / 255;
+          const scaled = norm * 10.0;
+          spectrum[k] = scaled;
+          sumEnergy += norm * norm;
+          if (scaled > peakVal && k * df > 20) {
+            peakVal = scaled;
+            peakHz = k * df;
+          }
+        }
+
+        // Nivel acústico RMS en dB relativo (referencia calibrada para micrófono móvil ~35-105 dB)
+        let sumSqTime = 0;
+        let peakWave = 0;
+        const waveN = 256;
+        const waveform = new Float32Array(waveN);
+        const stride = Math.floor(state.micTimeData.length / waveN);
+
+        for (let i = 0; i < state.micTimeData.length; i++) {
+          const s = state.micTimeData[i];
+          sumSqTime += s * s;
+          if (Math.abs(s) > peakWave) peakWave = Math.abs(s);
+        }
+        for (let i = 0; i < waveN; i++) {
+          waveform[i] = state.micTimeData[i * stride];
+        }
+
+        const rmsTime = Math.sqrt(sumSqTime / state.micTimeData.length);
+        const dbRel = Math.max(32, Math.min(115, 20 * Math.log10(rmsTime + 1e-5) + 104));
+
+        // Índice equivalente de severidad acústica proyectado para lectura rápida
+        const eqVelRms = Math.min(25, Math.sqrt(sumEnergy / usefulBins) * 16.5);
+
+        return {
+          spectrum,
+          maxFreq: usefulBins * df,
+          fs: sampleRate,
+          waveform,
+          velRms: eqVelRms,
+          accelRmsG: rmsTime * 2.5,
+          accelPeakG: peakWave * 2.5,
+          peakFreqHz: peakHz,
+          peakAmp: peakVal,
+          acousticDb: dbRel
+        };
+      }
+
+      /* =========================================================================
+         8. EVALUACIÓN NORMATIVA ISO 10816 Y MOTOR DE DIAGNÓSTICO
+         ========================================================================= */
+      function evaluateIso10816(velRms, isoClassKey) {
+        const cfg = ISO_CLASSES[isoClassKey] || ISO_CLASSES.II;
+        const [limA, limB, limC] = cfg.limits;
+
+        if (velRms <= limA) {
+          return { code: 'A', label: 'ZONA A — BUENO', short: 'Zona A', color: '#10b981', cssClass: 'zone-a' };
+        }
+        if (velRms <= limB) {
+          return { code: 'B', label: 'ZONA B — SATISFACTORIO', short: 'Zona B', color: '#eab308', cssClass: 'zone-b' };
+        }
+        if (velRms <= limC) {
+          return { code: 'C', label: 'ZONA C — INSATISFACTORIO', short: 'Zona C', color: '#f97316', cssClass: 'zone-c' };
+        }
+        return { code: 'D', label: 'ZONA D — INACEPTABLE', short: 'Zona D', color: '#ef4444', cssClass: 'zone-d' };
+      }
+
+      function getBandPeak(spectrum, maxFreq, centerHz, toleranceRatio = 0.1) {
+        if (!spectrum || spectrum.length === 0 || maxFreq <= 0) return 0;
+        const df = maxFreq / spectrum.length;
+        const fMin = Math.max(2, centerHz * (1 - toleranceRatio));
+        const fMax = Math.min(maxFreq, centerHz * (1 + toleranceRatio));
+        const idxStart = Math.max(1, Math.floor(fMin / df));
+        const idxEnd = Math.min(spectrum.length - 1, Math.ceil(fMax / df));
+        let maxVal = 0;
+        for (let i = idxStart; i <= idxEnd; i++) {
+          if (spectrum[i] > maxVal) maxVal = spectrum[i];
+        }
+        return maxVal;
+      }
+
+      function getRangeRms(spectrum, maxFreq, fStart, fEnd) {
+        if (!spectrum || spectrum.length === 0 || maxFreq <= 0 || fStart >= maxFreq) return 0;
+        const df = maxFreq / spectrum.length;
+        const idxStart = Math.max(1, Math.floor(fStart / df));
+        const idxEnd = Math.min(spectrum.length - 1, Math.ceil(Math.min(fEnd, maxFreq) / df));
+        if (idxEnd < idxStart) return 0;
+        let sumSq = 0;
+        for (let i = idxStart; i <= idxEnd; i++) {
+          sumSq += spectrum[i] * spectrum[i];
+        }
+        return Math.sqrt(sumSq);
+      }
+
+      function runDiagnosticEngine(result, machine, isoZone, deltaPct) {
+        const f1 = machine.rpm / 60;
+        const { spectrum, maxFreq, velRms, acousticDb, peakFreqHz } = result;
+
+        // En modo micrófono, el espectro llega hasta 4000 Hz
+        const isAcoustic = state.mode === 'mic';
+        const b1x = getBandPeak(spectrum, maxFreq, f1, 0.12);
+        const b2x = getBandPeak(spectrum, maxFreq, f1 * 2, 0.10);
+        const b3x = Math.max(
+          getBandPeak(spectrum, maxFreq, f1 * 3, 0.09),
+          getBandPeak(spectrum, maxFreq, f1 * 4, 0.08)
+        );
+
+        const hfStart = isAcoustic ? 1200 : Math.min(maxFreq * 0.55, Math.max(f1 * 3.6, 110));
+        const bHf = getRangeRms(spectrum, maxFreq, hfStart, maxFreq);
+
+        const bands = { b1x, b2x, b3x, bHf };
+        const cfg = ISO_CLASSES[machine.isoClass] || ISO_CLASSES.II;
+        const warnThreshold = cfg.limits[1]; // Límite superior Zona B
+
+        // Evaluación heurística industrial basada en reglas de análisis espectral
+        let title = 'Condición Normal / Operación Estable';
+        let summary = `Niveles dentro de parámetros aceptables (${velRms.toFixed(2)} mm/s RMS, ${isoZone.short}). No se observan armónicos críticos.`;
+        let severityColor = isoZone.color;
+        let recommendations = [
+          'Continuar con el plan de monitoreo rutinario programado.',
+          'Si aún no existe, capture la Huella Base de este activo como referencia de estado sano.'
+        ];
+
+        const highSeverity = isoZone.code === 'C' || isoZone.code === 'D' || (deltaPct !== null && deltaPct > 35);
+
+        if (isAcoustic && (acousticDb > 84 || bHf > 2.8)) {
+          title = 'Ruido Anómalo de Alta Frecuencia (Rodamientos / Cavitación)';
+          summary = `Nivel acústico elevado (${acousticDb.toFixed(1)} dB) con energía concentrada en alta frecuencia (pico en ${peakFreqHz.toFixed(0)} Hz).`;
+          severityColor = '#f97316';
+          recommendations = [
+            'Inspeccionar lubricación y estado de rodamientos con estetoscopio industrial o acelerómetro.',
+            'En bombas centrífugas, verificar presión de succión por posible cavitación o rozamiento de sello.'
+          ];
+        } else if (highSeverity || velRms > warnThreshold * 0.85) {
+          // 1. Falla de Rodamiento (Alta frecuencia dominante y aceleración/dB elevados)
+          if (bHf > Math.max(b1x, b2x, b3x) * 1.15 && (bHf > 1.8 || result.accelRmsG > 0.8)) {
+            title = 'Posible Daño en Rodamientos / Falta de Lubricación';
+            summary = `Energía dominante en banda de alta frecuencia (${bHf.toFixed(2)} mm/s eq.) con impacto impulsivo (${result.accelPeakG.toFixed(2)} g pico) y ruido de ${acousticDb.toFixed(1)} dB.`;
+            severityColor = isoZone.code === 'D' ? '#ef4444' : '#f97316';
+            recommendations = [
+              'Verificar estado y cantidad de grasa/aceite en rodamientos de carga y lado libre.',
+              'Programar inspección ultrasónica o reemplazo preventivo del rodamiento antes de fallo catastrófico.',
+              'Monitorear temperatura en la carcasa del rodamiento.'
+            ];
+          }
+          // 2. Soltura Mecánica (Múltiples armónicos 1X, 2X, 3X/4X presentes con fuerza)
+          else if (b3x > 1.3 && b1x > 1.2 && b2x > 1.2) {
+            title = 'Soltura Mecánica / Holgura Estructural';
+            summary = `Presencia simultánea de múltiples armónicos síncronos (1X=${b1x.toFixed(2)}, 2X=${b2x.toFixed(2)}, 3X-4X=${b3x.toFixed(2)} mm/s), patrón clásico de holgura o pernos flojos.`;
+            severityColor = isoZone.code === 'D' ? '#ef4444' : '#f97316';
+            recommendations = [
+              'Revisar torque de pernos de anclaje, base metálica, pata coja (soft foot) y chavetas.',
+              'Verificar holgura interna entre eje, alojamiento y tapas de rodamiento.'
+            ];
+          }
+          // 3. Desalineación (2X prominente respecto a 1X)
+          else if (b2x > b1x * 0.85 && b2x > 1.4) {
+            title = 'Desalineación de Ejes o Acoplamiento';
+            summary = `Pico dominante en 2X (${(f1 * 2).toFixed(1)} Hz con ${b2x.toFixed(2)} mm/s) acompañado de componente 1X (${b1x.toFixed(2)} mm/s).`;
+            severityColor = isoZone.code === 'D' ? '#ef4444' : '#f97316';
+            recommendations = [
+              'Ejecutar alineación láser o con comparadores de carátula entre motor y equipo conducido.',
+              'Inspeccionar el elemento elastomérico del acoplamiento por desgaste o polvo de caucho.',
+              'Comprobar vibración axial para confirmar desalineación angular.'
+            ];
+          }
+          // 4. Desbalanceo (1X dominante claramente sobre armónicos superiores)
+          else if (b1x > b2x * 1.4 && b1x > 1.3) {
+            title = 'Desbalanceo de Rotor (Pico 1X Dominante)';
+            summary = `Componente fundamental 1X (${f1.toFixed(1)} Hz / ${machine.rpm} RPM) domina el espectro con ${b1x.toFixed(2)} mm/s RMS.`;
+            severityColor = isoZone.code === 'D' ? '#ef4444' : '#f97316';
+            recommendations = [
+              'Limpiar acumulación de material, polvo o incrustaciones en impulsor/álabes.',
+              'Revisar pérdida de contrapesos, erosión de álabes o excentricidad del rotor.',
+              'Programar balanceo dinámico en sitio.'
+            ];
+          }
+          // 5. Alerta general fuera de norma
+          else {
+            title = 'Vibración Elevada — Requiere Inspección Detallada';
+            summary = `Velocidad RMS de ${velRms.toFixed(2)} mm/s supera el umbral recomendado para ${cfg.name}. Pico dominante en ${peakFreqHz.toFixed(1)} Hz.`;
+            severityColor = isoZone.color;
+            recommendations = [
+              'Medir en los 3 ejes (Horizontal, Vertical y Axial) para aislar la dirección dominante.',
+              'Verificar resonancia estructural o vibración transmitida desde equipos vecinos.'
+            ];
+          }
+        } else if (isoZone.code === 'B') {
+          title = 'Operación Satisfactoria (Zona B ISO 10816)';
+          summary = `Nivel de ${velRms.toFixed(2)} mm/s aceptable para operación continua sin restricciones a largo plazo.`;
+          severityColor = '#eab308';
+          recommendations = [
+            'Mantener vigilancia periódica de tendencia respecto a la huella base.',
+            'Revisar lubricación preventiva en la próxima parada programada.'
+          ];
+        }
+
+        return { bands, diagnosis: { title, summary, severityColor, recommendations } };
+      }
+
+      /* =========================================================================
+         9. GESTIÓN DE HUELLA BASE (PROMEDIADO 2 SEGUNDOS)
+         ========================================================================= */
+      function startBaselineCapture() {
+        if (!state.isRunning) {
+          showToast('Inicie primero la adquisición en vivo para capturar la Huella Base.', 'warn');
+          return;
+        }
+        state.baselineCapture = {
+          active: true,
+          startTime: performance.now(),
+          durationMs: 2000,
+          frames: 0,
+          accSpectrum: null,
+          accVelRms: 0,
+          accDb: 0,
+          maxFreq: state.latest.maxFreq
+        };
+        dom.captureProgressBox.classList.add('active');
+        dom.captureProgressFill.style.width = '0%';
+        dom.captureProgressPct.textContent = '0%';
+      }
+
+      function accumulateBaselineFrame(result) {
+        const cap = state.baselineCapture;
+        if (!cap.active) return;
+
+        const elapsed = performance.now() - cap.startTime;
+        const pct = Math.min(100, Math.round((elapsed / cap.durationMs) * 100));
+        dom.captureProgressFill.style.width = pct + '%';
+        dom.captureProgressPct.textContent = pct + '%';
+
+        if (!cap.accSpectrum || cap.accSpectrum.length !== result.spectrum.length) {
+          cap.accSpectrum = new Float32Array(result.spectrum.length);
+          cap.frames = 0;
+          cap.accVelRms = 0;
+          cap.accDb = 0;
+        }
+
+        for (let i = 0; i < result.spectrum.length; i++) {
+          cap.accSpectrum[i] += result.spectrum[i];
+        }
+        cap.accVelRms += result.velRms;
+        cap.accDb += result.acousticDb;
+        cap.maxFreq = result.maxFreq;
+        cap.frames++;
+
+        if (elapsed >= cap.durationMs && cap.frames > 0) {
+          const avgSpectrum = Array.from(cap.accSpectrum, v => Number((v / cap.frames).toFixed(4)));
+          const avgRms = Number((cap.accVelRms / cap.frames).toFixed(3));
+          const avgDb = Number((cap.accDb / cap.frames).toFixed(1));
+
+          const machine = getActiveMachine();
+          machine.baseline = {
+            spectrum: avgSpectrum,
+            maxFreq: Number(cap.maxFreq.toFixed(2)),
+            rms: avgRms,
+            acousticDb: avgDb,
+            mode: state.mode,
+            timestamp: new Date().toISOString()
+          };
+
+          saveMachines();
+          renderMachinesUI();
+          updateIsoScaleUI();
+
+          cap.active = false;
+          dom.captureProgressBox.classList.remove('active');
+          showToast(`Huella Base guardada para ${machine.name} (${avgRms.toFixed(2)} mm/s RMS).`, 'success');
+        }
+      }
+
+      /* =========================================================================
+         10. RENDERIZADO DE GRÁFICAS EN CANVAS 2D (FFT + OSCILOSCOPIO)
+         ========================================================================= */
+      function resizeCanvasToDisplaySize(canvas) {
+        const dpr = Math.min(window.devicePixelRatio || 1, 2);
+        const rect = canvas.getBoundingClientRect();
+        const width = Math.max(10, Math.floor(rect.width * dpr));
+        const height = Math.max(10, Math.floor(rect.height * dpr));
+        if (canvas.width !== width || canvas.height !== height) {
+          canvas.width = width;
+          canvas.height = height;
+        }
+        return { width: rect.width, height: rect.height, dpr };
+      }
+
+      function drawFftChart() {
+        const canvas = dom.fftCanvas;
+        const { width: W, height: H, dpr } = resizeCanvasToDisplaySize(canvas);
+        const ctx = canvas.getContext('2d');
+        ctx.save();
+        ctx.scale(dpr, dpr);
+
+        // Fondo oscuro de osciloscopio
+        ctx.fillStyle = '#070b14';
+        ctx.fillRect(0, 0, W, H);
+
+        const pad = { top: 24, right: 14, bottom: 28, left: 42 };
+        const plotW = Math.max(20, W - pad.left - pad.right);
+        const plotH = Math.max(20, H - pad.top - pad.bottom);
+
+        const { spectrum, maxFreq, peakFreqHz, peakAmp, isoZone } = state.latest;
+        const machine = getActiveMachine();
+        const f1 = machine.rpm / 60;
+
+        // Escala Y dinámica suave basada en pico actual y huella base
+        let maxY = 2.0;
+        for (let i = 1; i < spectrum.length; i++) {
+          if (spectrum[i] > maxY) maxY = spectrum[i];
+        }
+        if (machine.baseline && Array.isArray(machine.baseline.spectrum)) {
+          for (let i = 1; i < machine.baseline.spectrum.length; i++) {
+            if (machine.baseline.spectrum[i] > maxY) maxY = machine.baseline.spectrum[i];
+          }
+        }
+        maxY = Math.ceil(maxY * 1.25 * 2) / 2; // Redondeo limpio a múltiplos de 0.5
+        if (maxY < 2) maxY = 2;
+
+        // Cuadrícula horizontal y etiquetas Y
+        ctx.strokeStyle = 'rgba(148, 163, 184, 0.12)';
+        ctx.lineWidth = 1;
+        ctx.font = '10px ui-monospace, Consolas, monospace';
+        ctx.fillStyle = '#64748b';
+        ctx.textAlign = 'right';
+        ctx.textBaseline = 'middle';
+
+        const ySteps = 4;
+        for (let s = 0; s <= ySteps; s++) {
+          const val = (maxY * s) / ySteps;
+          const y = pad.top + plotH - (s / ySteps) * plotH;
+          ctx.beginPath();
+          ctx.moveTo(pad.left, y);
+          ctx.lineTo(pad.left + plotW, y);
+          ctx.stroke();
+          ctx.fillText(val.toFixed(1), pad.left - 6, y);
+        }
+
+        // Unidad eje Y
+        ctx.save();
+        ctx.fillStyle = '#94a3b8';
+        ctx.textAlign = 'left';
+        ctx.fillText(state.mode === 'mic' ? 'Mag' : 'mm/s', 4, 11);
+        ctx.restore();
+
+        // Cuadrícula vertical y etiquetas de Frecuencia (Hz)
+        const xSteps = 5;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'top';
+        for (let s = 0; s <= xSteps; s++) {
+          const freqVal = (maxFreq * s) / xSteps;
+          const x = pad.left + (s / xSteps) * plotW;
+          ctx.beginPath();
+          ctx.moveTo(x, pad.top);
+          ctx.lineTo(x, pad.top + plotH);
+          ctx.stroke();
+          ctx.fillStyle = '#64748b';
+          ctx.fillText(Math.round(freqVal) + ' Hz', x, pad.top + plotH + 7);
+        }
+
+        // Líneas verticales de referencia de armónicos 1X, 2X, 3X
+        const harmonics = [
+          { mult: 1, label: '1X' },
+          { mult: 2, label: '2X' },
+          { mult: 3, label: '3X' }
+        ];
+        harmonics.forEach(h => {
+          const fH = f1 * h.mult;
+          if (fH > 1 && fH < maxFreq) {
+            const x = pad.left + (fH / maxFreq) * plotW;
+            ctx.save();
+            ctx.strokeStyle = 'rgba(250, 204, 21, 0.42)';
+            ctx.setLineDash([4, 4]);
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.moveTo(x, pad.top);
+            ctx.lineTo(x, pad.top + plotH);
+            ctx.stroke();
+
+            ctx.fillStyle = 'rgba(250, 204, 21, 0.85)';
+            ctx.font = 'bold 10px ui-monospace, Consolas, monospace';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'bottom';
+            ctx.fillText(h.label, x, pad.top - 4);
+            ctx.restore();
+          }
+        });
+
+        // Superposición de HUELLA BASE (línea punteada cian #06b6d4)
+        if (machine.baseline && Array.isArray(machine.baseline.spectrum) && machine.baseline.spectrum.length > 2) {
+          const baseSpec = machine.baseline.spectrum;
+          const baseMaxF = machine.baseline.maxFreq || maxFreq;
+
+          ctx.save();
+          ctx.strokeStyle = '#06b6d4';
+          ctx.lineWidth = 1.8;
+          ctx.setLineDash([5, 4]);
+          ctx.beginPath();
+          let started = false;
+          for (let i = 1; i < baseSpec.length; i++) {
+            const freq = (i / baseSpec.length) * baseMaxF;
+            if (freq > maxFreq) break;
+            const x = pad.left + (freq / maxFreq) * plotW;
+            const y = pad.top + plotH - Math.min(1, baseSpec[i] / maxY) * plotH;
+            if (!started) {
+              ctx.moveTo(x, y);
+              started = true;
+            } else {
+              ctx.lineTo(x, y);
+            }
+          }
+          ctx.stroke();
+          ctx.restore();
+        }
+
+        // Curva del espectro FFT en vivo (relleno degradado + trazo)
+        const strokeColor = isoZone.color || '#10b981';
+        dom.legendLiveColor.style.background = strokeColor;
+
+        if (spectrum.length > 2) {
+          ctx.save();
+          const grad = ctx.createLinearGradient(0, pad.top, 0, pad.top + plotH);
+          grad.addColorStop(0, hexToRgba(strokeColor, 0.45));
+          grad.addColorStop(1, hexToRgba(strokeColor, 0.02));
+
+          ctx.beginPath();
+          ctx.moveTo(pad.left, pad.top + plotH);
+          for (let i = 1; i < spectrum.length; i++) {
+            const x = pad.left + (i / (spectrum.length - 1)) * plotW;
+            const y = pad.top + plotH - Math.min(1, spectrum[i] / maxY) * plotH;
+            ctx.lineTo(x, y);
+          }
+          ctx.lineTo(pad.left + plotW, pad.top + plotH);
+          ctx.closePath();
+          ctx.fillStyle = grad;
+          ctx.fill();
+
+          ctx.beginPath();
+          for (let i = 1; i < spectrum.length; i++) {
+            const x = pad.left + (i / (spectrum.length - 1)) * plotW;
+            const y = pad.top + plotH - Math.min(1, spectrum[i] / maxY) * plotH;
+            if (i === 1) ctx.moveTo(x, y);
+            else ctx.lineTo(x, y);
+          }
+          ctx.strokeStyle = strokeColor;
+          ctx.lineWidth = 2;
+          ctx.stroke();
+          ctx.restore();
+        }
+
+        // Etiqueta flotante del Pico Dominante
+        if (peakAmp > 0.05 && peakFreqHz > 0 && peakFreqHz <= maxFreq) {
+          const px = pad.left + (peakFreqHz / maxFreq) * plotW;
+          const py = pad.top + plotH - Math.min(1, peakAmp / maxY) * plotH;
+
+          // Punto resaltado
+          ctx.fillStyle = '#ffffff';
+          ctx.beginPath();
+          ctx.arc(px, py, 3.6, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.strokeStyle = strokeColor;
+          ctx.lineWidth = 2;
+          ctx.stroke();
+
+          const unit = state.mode === 'mic' ? 'u' : 'mm/s';
+          const label = `Pico: ${peakFreqHz.toFixed(1)} Hz (${peakAmp.toFixed(2)} ${unit})`;
+          ctx.font = 'bold 10.5px ui-monospace, Consolas, monospace';
+          const textW = ctx.measureText(label).width;
+          const boxW = textW + 12;
+          const boxH = 20;
+
+          let bx = px - boxW / 2;
+          if (bx < pad.left + 2) bx = pad.left + 2;
+          if (bx + boxW > W - 6) bx = W - 6 - boxW;
+          let by = py - boxH - 8;
+          if (by < pad.top + 2) by = py + 10;
+
+          ctx.fillStyle = 'rgba(15, 23, 42, 0.92)';
+          ctx.strokeStyle = strokeColor;
+          ctx.lineWidth = 1;
+          roundRect(ctx, bx, by, boxW, boxH, 5);
+          ctx.fill();
+          ctx.stroke();
+
+          ctx.fillStyle = '#f8fafc';
+          ctx.textAlign = 'left';
+          ctx.textBaseline = 'middle';
+          ctx.fillText(label, bx + 6, by + boxH / 2);
+        }
+
+        ctx.restore();
+      }
+
+      function drawWaveformChart() {
+        const canvas = dom.waveCanvas;
+        const { width: W, height: H, dpr } = resizeCanvasToDisplaySize(canvas);
+        const ctx = canvas.getContext('2d');
+        ctx.save();
+        ctx.scale(dpr, dpr);
+
+        ctx.fillStyle = '#070b14';
+        ctx.fillRect(0, 0, W, H);
+
+        const pad = { top: 10, right: 10, bottom: 10, left: 10 };
+        const plotW = W - pad.left - pad.right;
+        const plotH = H - pad.top - pad.bottom;
+        const midY = pad.top + plotH / 2;
+
+        // Línea cero y guías horizontales
+        ctx.strokeStyle = 'rgba(148, 163, 184, 0.14)';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(pad.left, midY);
+        ctx.lineTo(pad.left + plotW, midY);
+        ctx.moveTo(pad.left, pad.top + plotH * 0.25);
+        ctx.lineTo(pad.left + plotW, pad.top + plotH * 0.25);
+        ctx.moveTo(pad.left, pad.top + plotH * 0.75);
+        ctx.lineTo(pad.left + plotW, pad.top + plotH * 0.75);
+        ctx.stroke();
+
+        const wave = state.latest.waveform;
+        let maxAbs = 0.05;
+        for (let i = 0; i < wave.length; i++) {
+          const a = Math.abs(wave[i]);
+          if (a > maxAbs) maxAbs = a;
+        }
+        const scaleY = (plotH * 0.44) / maxAbs;
+
+        ctx.beginPath();
+        for (let i = 0; i < wave.length; i++) {
+          const x = pad.left + (i / (wave.length - 1)) * plotW;
+          const y = midY - wave[i] * scaleY;
+          if (i === 0) ctx.moveTo(x, y);
+          else ctx.lineTo(x, y);
+        }
+        ctx.strokeStyle = '#38bdf8';
+        ctx.lineWidth = 1.6;
+        ctx.stroke();
+
+        ctx.restore();
+      }
+
+      function hexToRgba(hex, alpha) {
+        const clean = hex.replace('#', '');
+        const r = parseInt(clean.substring(0, 2), 16);
+        const g = parseInt(clean.substring(2, 4), 16);
+        const b = parseInt(clean.substring(4, 6), 16);
+        return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+      }
+
+      function roundRect(ctx, x, y, w, h, r) {
+        ctx.beginPath();
+        ctx.moveTo(x + r, y);
+        ctx.lineTo(x + w - r, y);
+        ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+        ctx.lineTo(x + w, y + h - r);
+        ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+        ctx.lineTo(x + r, y + h);
+        ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+        ctx.lineTo(x, y + r);
+        ctx.quadraticCurveTo(x, y, x + r, y);
+        ctx.closePath();
+      }
+
+      /* =========================================================================
+         11. ACTUALIZACIÓN DE UI EN TIEMPO REAL
+         ========================================================================= */
+      function updateIsoScaleUI() {
+        const machine = getActiveMachine();
+        const cfg = ISO_CLASSES[machine.isoClass] || ISO_CLASSES.II;
+        const [a, b, c] = cfg.limits;
+        const max = cfg.maxScale;
+
+        const wA = (a / max) * 100;
+        const wB = ((b - a) / max) * 100;
+        const wC = ((c - b) / max) * 100;
+        const wD = Math.max(10, 100 - wA - wB - wC);
+
+        dom.isoSegA.style.width = wA + '%';
+        dom.isoSegB.style.width = wB + '%';
+        dom.isoSegC.style.width = wC + '%';
+        dom.isoSegD.style.width = wD + '%';
+
+        dom.isoClassTag.textContent = `(${cfg.name})`;
+
+        // Etiquetas de límites en la barra ISO
+        dom.isoTicks.innerHTML = `
+          <span class="iso-tick" style="left:2%;">0</span>
+          <span class="iso-tick" style="left:${wA}%;">${a}</span>
+          <span class="iso-tick" style="left:${wA + wB}%;">${b}</span>
+          <span class="iso-tick" style="left:${wA + wB + wC}%;">${c}</span>
+          <span class="iso-tick" style="left:97%;">${max}</span>
+        `;
+
+        // Pin visual de la Huella Base sobre la barra ISO
+        if (machine.baseline && typeof machine.baseline.rms === 'number') {
+          const pinPct = Math.min(99, Math.max(1, (machine.baseline.rms / max) * 100));
+          dom.isoBaselinePin.style.display = 'block';
+          dom.isoBaselinePin.style.left = pinPct + '%';
+        } else {
+          dom.isoBaselinePin.style.display = 'none';
+        }
+      }
+
+      function updateTelemetryUI() {
+        const machine = getActiveMachine();
+        const cfg = ISO_CLASSES[machine.isoClass] || ISO_CLASSES.II;
+        const L = state.latest;
+        const f1 = machine.rpm / 60;
+
+        // Barra ISO 10816
+        const pct = Math.min(99, Math.max(1, (L.velRms / cfg.maxScale) * 100));
+        dom.isoNeedle.style.left = pct + '%';
+        dom.isoNeedleVal.textContent = L.velRms.toFixed(2);
+
+        dom.isoZoneBadge.textContent = L.isoZone.label;
+        dom.isoZoneBadge.className = `iso-badge ${L.isoZone.cssClass}`;
+        dom.diagZoneBadge.textContent = L.isoZone.short;
+        dom.diagZoneBadge.className = `iso-badge ${L.isoZone.cssClass}`;
+
+        // KPIs
+        dom.kpiCardVel.style.setProperty('--kpi-accent', L.isoZone.color);
+        dom.valVelRms.textContent = L.velRms.toFixed(2);
+        dom.valAccelG.textContent = L.accelRmsG.toFixed(2);
+        dom.valAccelPeak.textContent = `${L.accelPeakG.toFixed(2)} g`;
+        dom.valPeakHz.textContent = L.peakFreqHz.toFixed(1);
+        dom.valPeakCpm.textContent = `${Math.round(L.peakFreqHz * 60)} CPM`;
+        dom.valPeakOrder.textContent = f1 > 0 ? `${(L.peakFreqHz / f1).toFixed(1)}X` : '--';
+
+        dom.valAcousticDb.textContent = L.acousticDb > 0 ? L.acousticDb.toFixed(1) : '--';
+        dom.valAcousticNote.textContent = state.mode === 'mic' ? 'Micrófono vivo' : (state.mode === 'sim' ? 'Simulado' : 'Estimado');
+        dom.valFsBadge.textContent = `${Math.round(L.fs)} Hz`;
+
+        dom.fftMetaTag.textContent = `1X = ${f1.toFixed(1)} Hz`;
+        dom.waveAmpTag.textContent = state.mode === 'mic'
+          ? `Nivel: ${L.acousticDb.toFixed(1)} dB`
+          : `±${L.accelPeakG.toFixed(2)} g`;
+
+        if (state.mode === 'accel') {
+          dom.accelFsLabel.textContent = `Fs: ${Math.round(state.accelFs)} Hz`;
+        }
+
+        // Desviación % respecto a Huella Base
+        if (L.deltaPct === null) {
+          dom.valBaselineDelta.textContent = 'Sin huella';
+          dom.valBaselineDelta.className = 'delta-pill delta-ok';
+        } else {
+          const sign = L.deltaPct >= 0 ? '+' : '';
+          dom.valBaselineDelta.textContent = `${sign}${L.deltaPct.toFixed(0)}%`;
+          if (L.deltaPct > 35) dom.valBaselineDelta.className = 'delta-pill delta-bad';
+          else if (L.deltaPct > 18) dom.valBaselineDelta.className = 'delta-pill delta-warn';
+          else dom.valBaselineDelta.className = 'delta-pill delta-ok';
+        }
+
+        // Banner de Alerta Prominente (Zona C/D o > +35% vs Huella Base)
+        const isZoneCD = L.isoZone.code === 'C' || L.isoZone.code === 'D';
+        const isBaselineExceeded = L.deltaPct !== null && L.deltaPct > 35;
+
+        if (state.isRunning && (isZoneCD || isBaselineExceeded)) {
+          dom.alertBanner.classList.add('visible');
+          dom.alertBanner.classList.toggle('warning', L.isoZone.code !== 'D');
+
+          if (L.isoZone.code === 'D') {
+            dom.alertBannerTitle.textContent = 'PELIGRO — ZONA D ISO 10816 (INACEPTABLE)';
+          } else if (L.isoZone.code === 'C') {
+            dom.alertBannerTitle.textContent = 'ALERTA — ZONA C ISO 10816 (INSATISFACTORIO)';
+          } else {
+            dom.alertBannerTitle.textContent = 'ALERTA DE DESVIACIÓN VS HUELLA BASE';
+          }
+
+          const reasons = [];
+          if (isZoneCD) reasons.push(`Velocidad RMS ${L.velRms.toFixed(2)} mm/s supera límite de ${cfg.name}`);
+          if (isBaselineExceeded) reasons.push(`+${L.deltaPct.toFixed(0)}% por encima de la Huella Base (${machine.baseline.rms.toFixed(2)} mm/s)`);
+          dom.alertBannerDesc.textContent = reasons.join(' • ') + '.';
+        } else {
+          dom.alertBanner.classList.remove('visible');
+        }
+
+        // Actualizar Diagnóstico (Vista rápida + Pestaña completa)
+        dom.liveDiagQuick.innerHTML = `
+          <div style="font-weight:700; color:${L.diagnosis.severityColor}; margin-bottom:3px;">${escapeHtml(L.diagnosis.title)}</div>
+          <div style="color:#94a3b8; font-size:0.82rem;">${escapeHtml(L.diagnosis.summary)}</div>
+        `;
+
+        dom.diagBox.style.borderLeftColor = L.diagnosis.severityColor;
+        dom.diagFaultTitle.textContent = L.diagnosis.title;
+        dom.diagFaultTitle.style.color = L.diagnosis.severityColor;
+        dom.diagFaultSummary.textContent = L.diagnosis.summary;
+        dom.diagRecommendations.innerHTML = L.diagnosis.recommendations
+          .map(r => `<li>${escapeHtml(r)}</li>`)
+          .join('');
+
+        dom.band1X.textContent = L.bands.b1x.toFixed(2);
+        dom.band2X.textContent = L.bands.b2x.toFixed(2);
+        dom.band3X.textContent = L.bands.b3x.toFixed(2);
+        dom.bandHF.textContent = L.bands.bHf.toFixed(2);
+      }
+
+      /* =========================================================================
+         12. BUCLE PRINCIPAL DE ADQUISICIÓN Y RENDER (REQUESTANIMATIONFRAME)
+         ========================================================================= */
+      function mainLoop(timestamp) {
+        if (!state.isRunning) return;
+
+        // Limitamos el procesado DSP a ~16 FPS (62 ms) para máxima eficiencia en batería móvil
+        if (timestamp - state.lastProcessTime >= 62) {
+          state.lastProcessTime = timestamp;
+
+          let res = null;
+          if (state.mode === 'sim') {
+            res = generateSimulatorFrame();
+          } else if (state.mode === 'accel') {
+            res = analyzeAccelerationSignal(state.accelBuffer, Math.max(20, state.accelFs));
+          } else if (state.mode === 'mic') {
+            res = processMicrophoneFrame();
+          }
+
+          if (res) {
+            const machine = getActiveMachine();
+            const isoZone = evaluateIso10816(res.velRms, machine.isoClass);
+
+            let deltaPct = null;
+            if (machine.baseline && machine.baseline.rms > 0.01) {
+              deltaPct = ((res.velRms - machine.baseline.rms) / machine.baseline.rms) * 100;
+            }
+
+            const { bands, diagnosis } = runDiagnosticEngine(res, machine, isoZone, deltaPct);
+
+            state.latest = {
+              ...res,
+              isoZone,
+              deltaPct,
+              bands,
+              diagnosis
+            };
+
+            if (state.baselineCapture.active) {
+              accumulateBaselineFrame(res);
+            }
+
+            updateTelemetryUI();
+            drawFftChart();
+            drawWaveformChart();
+          }
+        }
+
+        state.rafId = requestAnimationFrame(mainLoop);
+      }
+
+      async function startAcquisition() {
+        if (state.isRunning) return;
+
+        if (state.mode === 'accel') {
+          const ok = await startAccelerometer();
+          if (!ok) return;
+        } else if (state.mode === 'mic') {
+          const ok = await startMicrophone();
+          if (!ok) return;
+        }
+
+        state.isRunning = true;
+        state.lastProcessTime = 0;
+
+        dom.liveStatusDot.classList.add('live');
+        dom.liveStatusText.textContent = 'EN VIVO';
+        dom.btnToggleRun.className = 'btn btn-stop';
+        dom.btnToggleRun.innerHTML = `
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><rect x="5" y="5" width="14" height="14" rx="2"></rect></svg>
+          <span>Pausar Adquisición</span>
+        `;
+
+        state.rafId = requestAnimationFrame(mainLoop);
+      }
+
+      function stopAcquisition() {
+        state.isRunning = false;
+        if (state.rafId) {
+          cancelAnimationFrame(state.rafId);
+          state.rafId = null;
+        }
+        stopAccelerometer();
+        stopMicrophone();
+
+        if (state.baselineCapture.active) {
+          state.baselineCapture.active = false;
+          dom.captureProgressBox.classList.remove('active');
+        }
+
+        dom.liveStatusDot.classList.remove('live');
+        dom.liveStatusText.textContent = 'PAUSA';
+        dom.alertBanner.classList.remove('visible');
+        dom.btnToggleRun.className = 'btn btn-start';
+        dom.btnToggleRun.innerHTML = `
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><polygon points="6 4 20 12 6 20 6 4"></polygon></svg>
+          <span>Iniciar Adquisición en Vivo</span>
+        `;
+      }
+
+      async function switchMode(newMode) {
+        if (state.mode === newMode) return;
+        const wasRunning = state.isRunning;
+        if (wasRunning) stopAcquisition();
+
+        state.mode = newMode;
+        document.querySelectorAll('.seg-btn').forEach(btn => {
+          btn.classList.toggle('active', btn.dataset.mode === newMode);
+        });
+
+        dom.accelControls.style.display = newMode === 'accel' ? 'flex' : 'none';
+        dom.simControls.style.display = newMode === 'sim' ? 'flex' : 'none';
+        dom.micControls.style.display = newMode === 'mic' ? 'flex' : 'none';
+
+        if (wasRunning) {
+          await startAcquisition();
+        }
+      }
+
+      /* =========================================================================
+         13. GESTIÓN DE MÁQUINAS Y BITÁCORA (RENDER + EXPORTAR CSV)
+         ========================================================================= */
+      function escapeHtml(str) {
+        return String(str)
+          .replace(/&/g, '&amp;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;')
+          .replace(/"/g, '&quot;');
+      }
+
+      function formatDateShort(isoStr) {
+        try {
+          const d = new Date(isoStr);
+          return d.toLocaleString('es-MX', {
+            day: '2-digit', month: '2-digit', year: '2-digit',
+            hour: '2-digit', minute: '2-digit'
+          });
+        } catch {
+          return isoStr;
+        }
+      }
+
+      function syncActiveMachineHeader() {
+        const m = getActiveMachine();
+        dom.headerMachineName.textContent = m.name;
+        dom.headerMachineRpm.textContent = `${m.rpm} RPM`;
+        dom.quickMachineSelect.value = m.id;
+        dom.quickIsoClassSelect.value = m.isoClass;
+        updateIsoScaleUI();
+        drawFftChart();
+      }
+
+      function renderMachinesUI() {
+        // Poblar selector rápido
+        dom.quickMachineSelect.innerHTML = state.machines
+          .map(m => `<option value="${escapeHtml(m.id)}">${escapeHtml(m.name)} (${m.rpm} RPM)</option>`)
+          .join('');
+
+        dom.machineCountTag.textContent = `${state.machines.length} ${state.machines.length === 1 ? 'equipo' : 'equipos'}`;
+
+        // Lista completa en pestaña Máquinas
+        dom.machineList.innerHTML = state.machines.map(m => {
+          const isSel = m.id === state.selectedMachineId;
+          const cfg = ISO_CLASSES[m.isoClass] || ISO_CLASSES.II;
+          const hasBase = m.baseline && typeof m.baseline.rms === 'number';
+          const baseInfo = hasBase
+            ? `<span class="tag cyan">Huella: ${m.baseline.rms.toFixed(2)} mm/s (${formatDateShort(m.baseline.timestamp)})</span>`
+            : `<span class="tag">Sin huella base</span>`;
+
+          return `
+            <div class="machine-item ${isSel ? 'selected' : ''}">
+              <div class="machine-top">
+                <div>
+                  <div class="machine-name">${escapeHtml(m.name)} ${isSel ? '<span style="color:var(--cyan); font-size:0.75rem;">● ACTIVA</span>' : ''}</div>
+                  <div class="machine-meta" style="margin-top:4px;">
+                    <span>${m.rpm} RPM (1X = ${(m.rpm / 60).toFixed(1)} Hz)</span>
+                    <span>•</span>
+                    <span>${cfg.name} (${cfg.desc})</span>
+                  </div>
+                </div>
+              </div>
+              <div style="display:flex; flex-wrap:wrap; gap:6px; align-items:center; justify-content:space-between; margin-top:2px;">
+                <div>${baseInfo}</div>
+                <div style="display:flex; gap:6px;">
+                  ${!isSel ? `<button type="button" class="btn btn-sm btn-cyan-outline" data-select-machine="${escapeHtml(m.id)}">Seleccionar</button>` : ''}
+                  ${hasBase ? `<button type="button" class="btn btn-sm btn-outline" data-clear-base="${escapeHtml(m.id)}">Borrar Huella</button>` : ''}
+                  ${state.machines.length > 1 ? `<button type="button" class="btn btn-sm btn-danger-outline" data-delete-machine="${escapeHtml(m.id)}">Eliminar</button>` : ''}
+                </div>
+              </div>
+            </div>
+          `;
+        }).join('');
+
+        // Eventos delegados de tarjetas de máquina
+        dom.machineList.querySelectorAll('[data-select-machine]').forEach(btn => {
+          btn.addEventListener('click', () => {
+            state.selectedMachineId = btn.dataset.selectMachine;
+            saveMachines();
+            renderMachinesUI();
+            syncActiveMachineHeader();
+            showToast(`Máquina activa: ${getActiveMachine().name}`, 'info');
+          });
+        });
+
+        dom.machineList.querySelectorAll('[data-clear-base]').forEach(btn => {
+          btn.addEventListener('click', () => {
+            const target = state.machines.find(x => x.id === btn.dataset.clearBase);
+            if (!target) return;
+            openConfirmModal(
+              'Borrar Huella Base',
+              `¿Eliminar la firma espectral de referencia guardada para "${target.name}"?`,
+              () => {
+                target.baseline = null;
+                saveMachines();
+                renderMachinesUI();
+                updateIsoScaleUI();
+                drawFftChart();
+                showToast('Huella Base eliminada.', 'info');
+              }
+            );
+          });
+        });
+
+        dom.machineList.querySelectorAll('[data-delete-machine]').forEach(btn => {
+          btn.addEventListener('click', () => {
+            const target = state.machines.find(x => x.id === btn.dataset.deleteMachine);
+            if (!target) return;
+            openConfirmModal(
+              'Eliminar Máquina',
+              `¿Desea eliminar "${target.name}" del catálogo de equipos?`,
+              () => {
+                state.machines = state.machines.filter(x => x.id !== target.id);
+                if (state.selectedMachineId === target.id) {
+                  state.selectedMachineId = state.machines[0].id;
+                }
+                saveMachines();
+                renderMachinesUI();
+                syncActiveMachineHeader();
+                showToast('Equipo eliminado del catálogo.', 'info');
+              }
+            );
+          });
+        });
+
+        syncActiveMachineHeader();
+      }
+
+      function saveMeasurementToLog() {
+        const machine = getActiveMachine();
+        const L = state.latest;
+        const now = new Date();
+
+        const entry = {
+          id: 'log-' + Date.now(),
+          timestamp: now.toISOString(),
+          dateStr: now.toLocaleDateString('es-MX'),
+          timeStr: now.toLocaleTimeString('es-MX', { hour12: false }),
+          machineName: machine.name,
+          rpm: machine.rpm,
+          isoClass: machine.isoClass,
+          mode: state.mode === 'sim' ? `Simulador (${state.simScenario})` : (state.mode === 'accel' ? `Acelerómetro (${state.axis})` : 'Micrófono'),
+          velRms: Number(L.velRms.toFixed(2)),
+          accelRmsG: Number(L.accelRmsG.toFixed(2)),
+          peakFreqHz: Number(L.peakFreqHz.toFixed(1)),
+          acousticDb: Number(L.acousticDb.toFixed(1)),
+          isoZone: L.isoZone.short,
+          isoCss: L.isoZone.cssClass,
+          deltaPct: L.deltaPct !== null ? `${L.deltaPct >= 0 ? '+' : ''}${L.deltaPct.toFixed(0)}%` : 'N/A',
+          diagnosis: L.diagnosis.title
+        };
+
+        state.logs.unshift(entry);
+        if (state.logs.length > 200) state.logs.pop();
+        saveLogs();
+        renderLogsUI();
+        showToast(`Medición guardada en bitácora (${entry.velRms} mm/s • ${entry.isoZone}).`, 'success');
+      }
+
+      function renderLogsUI() {
+        dom.logCount.textContent = state.logs.length;
+
+        if (state.logs.length === 0) {
+          dom.historyList.innerHTML = `
+            <div class="empty-state">
+              No hay registros en la bitácora.<br/>
+              Pulse <strong>"Guardar Bitácora"</strong> en el Analizador para almacenar inspecciones de campo.
+            </div>
+          `;
+          return;
+        }
+
+        dom.historyList.innerHTML = state.logs.map(log => `
+          <div class="history-card">
+            <div class="history-top">
+              <div>
+                <strong style="font-size:0.9rem;">${escapeHtml(log.machineName)}</strong>
+                <div class="mono" style="font-size:0.72rem; color:var(--text-muted);">${escapeHtml(log.dateStr)} ${escapeHtml(log.timeStr)} • Clase ${escapeHtml(log.isoClass)} • ${escapeHtml(log.mode)}</div>
+              </div>
+              <span class="iso-badge ${escapeHtml(log.isoCss || 'zone-a')}">${escapeHtml(log.isoZone)}</span>
+            </div>
+            <div class="history-metrics">
+              <span>RMS: <strong>${log.velRms} mm/s</strong></span>
+              <span>Pico: <strong>${log.peakFreqHz} Hz</strong></span>
+              <span>dB: <strong>${log.acousticDb}</strong></span>
+              <span>Δ Base: <strong>${escapeHtml(log.deltaPct)}</strong></span>
+            </div>
+            <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; margin-top:2px;">
+              <span style="font-size:0.8rem; color:#cbd5e1;">${escapeHtml(log.diagnosis)}</span>
+              <button type="button" class="btn btn-sm btn-danger-outline" data-delete-log="${escapeHtml(log.id)}" style="min-height:28px; padding:3px 8px;">✕</button>
+            </div>
+          </div>
+        `).join('');
+
+        dom.historyList.querySelectorAll('[data-delete-log]').forEach(btn => {
+          btn.addEventListener('click', () => {
+            state.logs = state.logs.filter(l => l.id !== btn.dataset.deleteLog);
+            saveLogs();
+            renderLogsUI();
+          });
+        });
+      }
+
+      function exportLogsToCsv() {
+        if (state.logs.length === 0) {
+          showToast('No hay mediciones en la bitácora para exportar.', 'warn');
+          return;
+        }
+
+        const headers = [
+          'Fecha', 'Hora', 'Maquina', 'RPM', 'Clase_ISO', 'Modo',
+          'Velocidad_RMS_mm_s', 'Aceleracion_RMS_g', 'Frecuencia_Pico_Hz',
+          'Nivel_Acustico_dB', 'Estado_ISO_10816', 'Desviacion_Huella_Base', 'Diagnostico_Preliminar'
+        ];
+
+        const csvEscape = (val) => `"${String(val ?? '').replace(/"/g, '""')}"`;
+
+        const rows = state.logs.map(l => [
+          l.dateStr, l.timeStr, l.machineName, l.rpm, l.isoClass, l.mode,
+          l.velRms, l.accelRmsG, l.peakFreqHz, l.acousticDb, l.isoZone, l.deltaPct, l.diagnosis
+        ].map(csvEscape).join(','));
+
+        // BOM UTF-8 para compatibilidad total con acentos en Microsoft Excel
+        const csvContent = '\uFEFF' + [headers.join(','), ...rows].join('\n');
+        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+
+        const a = document.createElement('a');
+        a.href = url;
+        const stamp = new Date().toISOString().slice(0, 10);
+        a.download = `VibroSpec_ISO_Bitacora_${stamp}.csv`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(url);
+
+        showToast('Bitácora exportada en formato CSV.', 'success');
+      }
+
+      /* =========================================================================
+         14. NAVEGACIÓN Y EVENTOS DE USUARIO
+         ========================================================================= */
+      function switchTab(tabId) {
+        document.querySelectorAll('.tab-view').forEach(sec => {
+          sec.classList.toggle('active', sec.id === tabId);
+        });
+        document.querySelectorAll('.nav-item').forEach(btn => {
+          btn.classList.toggle('active', btn.dataset.tab === tabId);
+        });
+        if (tabId === 'tab-analyzer') {
+          drawFftChart();
+          drawWaveformChart();
+        }
+      }
+
+      function bindEvents() {
+        // Navegación inferior
+        document.querySelectorAll('.nav-item').forEach(btn => {
+          btn.addEventListener('click', () => switchTab(btn.dataset.tab));
+        });
+
+        dom.btnGoDiag.addEventListener('click', () => switchTab('tab-diagnostics'));
+
+        // Selector de modo (Acelerómetro / Micrófono / Simulador)
+        document.querySelectorAll('.seg-btn').forEach(btn => {
+          btn.addEventListener('click', () => switchMode(btn.dataset.mode));
+        });
+
+        // Chips de eje de acelerómetro
+        document.querySelectorAll('#axisChips .chip').forEach(chip => {
+          chip.addEventListener('click', () => {
+            state.axis = chip.dataset.axis;
+            document.querySelectorAll('#axisChips .chip').forEach(c => c.classList.toggle('active', c === chip));
+          });
+        });
+
+        // Escenario del simulador
+        dom.simScenarioSelect.addEventListener('change', (e) => {
+          state.simScenario = e.target.value;
+          if (!state.isRunning) {
+            startAcquisition();
+          }
+        });
+
+        // Selector rápido de máquina y clase ISO
+        dom.quickMachineSelect.addEventListener('change', (e) => {
+          state.selectedMachineId = e.target.value;
+          saveMachines();
+          renderMachinesUI();
+          syncActiveMachineHeader();
+        });
+
+        dom.quickIsoClassSelect.addEventListener('change', (e) => {
+          const m = getActiveMachine();
+          m.isoClass = e.target.value;
+          saveMachines();
+          renderMachinesUI();
+          updateIsoScaleUI();
+        });
+
+        // Botón Iniciar / Pausar
+        dom.btnToggleRun.addEventListener('click', () => {
+          if (state.isRunning) stopAcquisition();
+          else startAcquisition();
+        });
+
+        // Botón Huella Base y Guardar Bitácora
+        dom.btnCaptureBaseline.addEventListener('click', startBaselineCapture);
+        dom.btnSaveLog.addEventListener('click', saveMeasurementToLog);
+        dom.btnSaveLogDiag.addEventListener('click', saveMeasurementToLog);
+
+        // Formulario nueva máquina
+        dom.machineForm.addEventListener('submit', (e) => {
+          e.preventDefault();
+          const name = dom.newMachineName.value.trim();
+          const rpm = parseInt(dom.newMachineRpm.value, 10);
+          const isoClass = dom.newMachineIso.value;
+
+          if (!name || isNaN(rpm) || rpm < 120 || rpm > 12000) {
+            showToast('Verifique el nombre y las RPM (120 a 12000).', 'warn');
+            return;
+          }
+
+          const newM = {
+            id: 'm-' + Date.now(),
+            name,
+            rpm,
+            isoClass,
+            baseline: null
+          };
+
+          state.machines.push(newM);
+          state.selectedMachineId = newM.id;
+          saveMachines();
+          renderMachinesUI();
+          dom.newMachineName.value = '';
+          showToast(`Máquina "${name}" agregada y seleccionada.`, 'success');
+        });
+
+        // Exportar y limpiar bitácora
+        dom.btnExportCsv.addEventListener('click', exportLogsToCsv);
+        dom.btnClearLogs.addEventListener('click', () => {
+          if (state.logs.length === 0) return;
+          openConfirmModal(
+            'Limpiar Bitácora',
+            '¿Desea eliminar permanentemente todos los registros guardados en el historial?',
+            () => {
+              state.logs = [];
+              saveLogs();
+              renderLogsUI();
+              showToast('Bitácora limpiada.', 'info');
+            }
+          );
+        });
+
+        // Redibujar canvas al redimensionar o rotar el celular
+        window.addEventListener('resize', () => {
+          drawFftChart();
+          drawWaveformChart();
+        });
+      }
+
+      /* =========================================================================
+         15. INICIALIZACIÓN DE LA APLICACIÓN
+         ========================================================================= */
+      function init() {
+        loadStorage();
+        bindEvents();
+        renderMachinesUI();
+        renderLogsUI();
+        updateIsoScaleUI();
+
+        // Iniciar automáticamente en modo simulador sano para mostrar la instrumentación activa al abrir
+        startAcquisition();
+      }
+
+      window.addEventListener('DOMContentLoaded', init);
+    })();
+  </script>
+</body>
+</html>
